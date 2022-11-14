@@ -17,6 +17,7 @@ try:
     from elftools.elf.constants import SH_FLAGS
     from elftools.elf.enums import ENUM_RELOC_TYPE_ARM
     from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64
+    from elftools.elf.enums import ENUM_RELOC_TYPE_x64
     from elftools.elf.sections import SymbolTableSection
     from elftools.elf.relocation import RelocationSection
 
@@ -58,6 +59,8 @@ def get_arch_id(elffile):
         return 0
     if e_machine == 'EM_AARCH64':
         return 1
+    if e_machine == 'EM_X86_64':
+        return 2
     eprint('Unknown e_machine "%s"' % e_machine)
     sys.exit(1)
 
@@ -143,8 +146,8 @@ def get_pager_bin(elffile):
     global tee_pager_bin
     if tee_pager_bin is None:
         pad_to = get_symbol(elffile, '__data_end')['st_value']
-        dump_names = re.compile(r'^\.(text|nex_data|rodata|ctors|got|data|'
-                                r'data\.rel\.ro|ARM\.exidx|ARM\.extab)$')
+        dump_names = re.compile(
+            r'^\.(text|nex_data|rodata|got|data|ARM\.exidx|ARM\.extab)$')
         tee_pager_bin = get_sections(elffile, pad_to, dump_names)
 
     return tee_pager_bin
@@ -153,8 +156,10 @@ def get_pager_bin(elffile):
 def get_reloc_bin(elffile):
     if get_arch_id(elffile) == 0:
         exp_rel_type = ENUM_RELOC_TYPE_ARM['R_ARM_RELATIVE']
-    else:
+    elif get_arch_id(elffile) == 1:
         exp_rel_type = ENUM_RELOC_TYPE_AARCH64['R_AARCH64_RELATIVE']
+    else:
+        exp_rel_type = ENUM_RELOC_TYPE_x64['R_X86_64_RELATIVE']
 
     link_address = get_symbol(elffile, '__text_start')['st_value']
 

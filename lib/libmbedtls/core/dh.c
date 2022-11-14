@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "mbed_helpers.h"
+#include "mbd_rand.h"
 
 TEE_Result crypto_acipher_alloc_dh_keypair(struct dh_keypair *s,
 					   size_t key_size_bits)
@@ -44,7 +44,7 @@ err:
 
 TEE_Result crypto_acipher_gen_dh_key(struct dh_keypair *key,
 				     struct bignum *q __unused,
-				     size_t xbits, size_t key_size)
+				     size_t xbits)
 {
 	TEE_Result res = TEE_SUCCESS;
 	int lmd_res = 0;
@@ -59,10 +59,6 @@ TEE_Result crypto_acipher_gen_dh_key(struct dh_keypair *key,
 	dhm.P = *(mbedtls_mpi *)key->p;
 
 	dhm.len = crypto_bignum_num_bytes(key->p);
-	if (key_size != 8 * dhm.len) {
-		res = TEE_ERROR_BAD_PARAMETERS;
-		goto out;
-	}
 
 	if (xbits == 0)
 		xbytes = dhm.len;

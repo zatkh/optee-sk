@@ -8,7 +8,7 @@
 #include <asm.S>
 #include <generated/asm-defines.h>
 #include <keep.h>
-#include <kernel/thread.h>
+#include <kernel/thread_defs.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
@@ -27,12 +27,9 @@
  */
 	.macro readjust_pc
 #ifdef CFG_CORE_ASLR
-	adr	x16, 1111f
-	ldr	x17, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
-	add	x16, x16, x17
+	ldr	x16, =1111f
 	br	x16
 1111:
-BTI(	bti	j)
 #endif
 	.endm
 
@@ -48,8 +45,7 @@ LOCAL_FUNC vector_std_smc_entry , : , .identity_map
 	mov	w1, w0
 	ldr	x0, =TEESMC_OPTEED_RETURN_CALL_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_std_smc_entry
 
 LOCAL_FUNC vector_fast_smc_entry , : , .identity_map
@@ -62,8 +58,7 @@ LOCAL_FUNC vector_fast_smc_entry , : , .identity_map
 	add	sp, sp, #THREAD_SMC_ARGS_SIZE
 	ldr	x0, =TEESMC_OPTEED_RETURN_CALL_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_fast_smc_entry
 
 LOCAL_FUNC vector_fiq_entry , : , .identity_map
@@ -73,67 +68,74 @@ LOCAL_FUNC vector_fiq_entry , : , .identity_map
 	bl	itr_core_handler
 	ldr	x0, =TEESMC_OPTEED_RETURN_FIQ_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_fiq_entry
 
 LOCAL_FUNC vector_cpu_on_entry , : , .identity_map
-	bl	cpu_on_handler
+	adr	x16, thread_cpu_on_handler_ptr
+	ldr	x16, [x16]
+	ldr	x17, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
+	sub	x16, x16, x17
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_ON_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_cpu_on_entry
 
 LOCAL_FUNC vector_cpu_off_entry , : , .identity_map
 	readjust_pc
-	bl	thread_cpu_off_handler
+	adr	x16, thread_cpu_off_handler_ptr
+	ldr	x16, [x16]
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_OFF_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_cpu_off_entry
 
 LOCAL_FUNC vector_cpu_suspend_entry , : , .identity_map
 	readjust_pc
-	bl	thread_cpu_suspend_handler
+	adr	x16, thread_cpu_suspend_handler_ptr
+	ldr	x16, [x16]
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_SUSPEND_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_cpu_suspend_entry
 
 LOCAL_FUNC vector_cpu_resume_entry , : , .identity_map
 	readjust_pc
-	bl	thread_cpu_resume_handler
+	adr	x16, thread_cpu_resume_handler_ptr
+	ldr	x16, [x16]
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_RESUME_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_cpu_resume_entry
 
 LOCAL_FUNC vector_system_off_entry , : , .identity_map
 	readjust_pc
-	bl	thread_system_off_handler
+	adr	x16, thread_system_off_handler_ptr
+	ldr	x16, [x16]
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_SYSTEM_OFF_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_system_off_entry
 
 LOCAL_FUNC vector_system_reset_entry , : , .identity_map
 	readjust_pc
-	bl	thread_system_reset_handler
+	adr	x16, thread_system_reset_handler_ptr
+	ldr	x16, [x16]
+	blr	x16
 	mov	x1, x0
 	ldr	x0, =TEESMC_OPTEED_RETURN_SYSTEM_RESET_DONE
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC vector_system_reset_entry
 
 /*
@@ -143,7 +145,7 @@ END_FUNC vector_system_reset_entry
  * Note that ARM-TF depends on the layout of this vector table, any change
  * in layout has to be synced with ARM-TF.
  */
-FUNC thread_vector_table , : , .identity_map, , nobti
+FUNC thread_vector_table , : , .identity_map
 	b	vector_std_smc_entry
 	b	vector_fast_smc_entry
 	b	vector_cpu_on_entry
@@ -154,7 +156,7 @@ FUNC thread_vector_table , : , .identity_map, , nobti
 	b	vector_system_off_entry
 	b	vector_system_reset_entry
 END_FUNC thread_vector_table
-DECLARE_KEEP_PAGER thread_vector_table
+KEEP_PAGER thread_vector_table
 
 FUNC thread_std_smc_entry , :
 	bl	__thread_std_smc_entry
@@ -173,8 +175,7 @@ FUNC thread_std_smc_entry , :
 	mov	x3, #0
 	mov	x4, #0
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC thread_std_smc_entry
 
 /* void thread_rpc(uint32_t rv[THREAD_RPC_NUM_ARGS]) */
@@ -191,13 +192,6 @@ FUNC thread_rpc , :
 	ldr	x30, [sp, #8]
 	store_xregs x0, THREAD_CTX_REGS_X19, 19, 30
 	mov	x19, x0
-
-#if defined(CFG_CORE_PAUTH)
-	/* Save APIAKEY */
-	read_apiakeyhi  x1
-	read_apiakeylo  x2
-	store_xregs x0, THREAD_CTX_REGS_APIAKEY_HI, 1, 2
-#endif
 
 	bl	thread_get_tmp_sp
 	pop	x1, xzr		/* Match "push x1, x30" above */
@@ -221,8 +215,7 @@ FUNC thread_rpc , :
 	mov	x2, x22
 	mov	x3, x23
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.		/* SMC should not return */
 
 .thread_rpc_return:
 	/*
@@ -237,7 +230,7 @@ FUNC thread_rpc , :
 	store_wregs x16, 0, 0, 3	/* Store w0-w3 into rv[] */
 	ret
 END_FUNC thread_rpc
-DECLARE_KEEP_PAGER thread_rpc
+KEEP_PAGER thread_rpc
 
 /*
  * void thread_foreign_intr_exit(uint32_t thread_index)
@@ -254,8 +247,5 @@ FUNC thread_foreign_intr_exit , :
 	mov	w2, #0
 	mov	w3, #0
 	smc	#0
-	/* SMC should not return */
-	panic_at_smc_return
+	b	.	/* SMC should not return */
 END_FUNC thread_foreign_intr_exit
-
-BTI(emit_aarch64_feature_1_and     GNU_PROPERTY_AARCH64_FEATURE_1_BTI)

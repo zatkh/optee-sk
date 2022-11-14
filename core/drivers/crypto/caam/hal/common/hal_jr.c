@@ -13,7 +13,6 @@
 #include <registers/ctrl_regs.h>
 #include <registers/jr_regs.h>
 
-#ifdef CFG_NXP_CAAM_RUNTIME_JR
 /*
  * List of common JR registers to save/restore
  */
@@ -24,7 +23,6 @@ static const struct reglist jr_backup[] = {
 	BACKUP_REG(JRX_ORSR, 1, 0, 0),
 	BACKUP_REG(JRX_JRCFGR_LS, 1, 0, 0),
 };
-#endif /* CFG_NXP_CAAM_RUNTIME_JR */
 
 enum caam_status caam_hal_jr_reset(vaddr_t baseaddr)
 {
@@ -76,23 +74,13 @@ void caam_hal_jr_config(vaddr_t baseaddr, uint8_t nbjobs, uint64_t inrings,
 	uint32_t value = 0;
 
 	/* Setup the JR input queue */
-#if defined(CFG_CAAM_64BIT) && defined(CFG_CAAM_LITTLE_ENDIAN)
-	io_caam_write32(baseaddr + JRX_IRBAR, inrings);
-	io_caam_write32(baseaddr + JRX_IRBAR + 4, inrings >> 32);
-#else
 	io_caam_write32(baseaddr + JRX_IRBAR, inrings >> 32);
 	io_caam_write32(baseaddr + JRX_IRBAR + 4, inrings);
-#endif
 	io_caam_write32(baseaddr + JRX_IRSR, nbjobs);
 
 	/* Setup the JR output queue */
-#if defined(CFG_CAAM_64BIT) && defined(CFG_CAAM_LITTLE_ENDIAN)
-	io_caam_write32(baseaddr + JRX_ORBAR, outrings);
-	io_caam_write32(baseaddr + JRX_ORBAR + 4, outrings >> 32);
-#else
 	io_caam_write32(baseaddr + JRX_ORBAR, outrings >> 32);
 	io_caam_write32(baseaddr + JRX_ORBAR + 4, outrings);
-#endif
 	io_caam_write32(baseaddr + JRX_ORSR, nbjobs);
 
 	/* Disable the JR interrupt */
@@ -136,7 +124,6 @@ void caam_hal_jr_del_job(vaddr_t baseaddr)
 	io_caam_write32(baseaddr + JRX_ORJRR, 1);
 }
 
-#ifdef CFG_CAAM_ITR
 void caam_hal_jr_disable_itr(vaddr_t baseaddr)
 {
 	io_setbits32(baseaddr + JRX_JRCFGR_LS, JRX_JRCFGR_LS_IMSK);
@@ -148,10 +135,6 @@ void caam_hal_jr_enable_itr(vaddr_t baseaddr)
 	io_mask32(baseaddr + JRX_JRCFGR_LS, ~JRX_JRCFGR_LS_IMSK,
 		  JRX_JRCFGR_LS_IMSK);
 }
-#else
-void caam_hal_jr_disable_itr(vaddr_t baseaddr __unused) {}
-void caam_hal_jr_enable_itr(vaddr_t baseaddr __unused) {}
-#endif /* CFG_CAAM_ITR */
 
 bool caam_hal_jr_check_ack_itr(vaddr_t baseaddr)
 {
@@ -220,7 +203,7 @@ enum caam_status caam_hal_jr_flush(vaddr_t baseaddr)
 		caam_udelay(10);
 		val = io_caam_read32(baseaddr + JRX_JRINTR);
 		val &= BM_JRX_JRINTR_HALT;
-	} while ((val == JRINTR_HALT_ONGOING) && --timeout);
+	} while ((val == JRINTR_HALT_DONE) && --timeout);
 
 	if (!timeout)
 		return CAAM_BUSY;

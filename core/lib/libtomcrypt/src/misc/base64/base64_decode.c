@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -75,7 +82,7 @@ enum {
    relaxed = 2
 };
 
-static int s_base64_decode_internal(const char *in,  unsigned long inlen,
+static int _base64_decode_internal(const char *in,  unsigned long inlen,
                                  unsigned char *out, unsigned long *outlen,
                            const unsigned char *map, int mode)
 {
@@ -149,7 +156,7 @@ static int s_base64_decode_internal(const char *in,  unsigned long inlen,
 int base64_decode(const char *in,  unsigned long inlen,
                         unsigned char *out, unsigned long *outlen)
 {
-    return s_base64_decode_internal(in, inlen, out, outlen, map_base64, insane);
+    return _base64_decode_internal(in, inlen, out, outlen, map_base64, insane);
 }
 
 /**
@@ -163,7 +170,7 @@ int base64_decode(const char *in,  unsigned long inlen,
 int base64_strict_decode(const char *in,  unsigned long inlen,
                         unsigned char *out, unsigned long *outlen)
 {
-   return s_base64_decode_internal(in, inlen, out, outlen, map_base64, strict);
+   return _base64_decode_internal(in, inlen, out, outlen, map_base64, strict);
 }
 
 /**
@@ -177,7 +184,7 @@ int base64_strict_decode(const char *in,  unsigned long inlen,
 int base64_sane_decode(const char *in,  unsigned long inlen,
                         unsigned char *out, unsigned long *outlen)
 {
-   return s_base64_decode_internal(in, inlen, out, outlen, map_base64, relaxed);
+   return _base64_decode_internal(in, inlen, out, outlen, map_base64, relaxed);
 }
 #endif /* LTC_BASE64 */
 
@@ -193,7 +200,7 @@ int base64_sane_decode(const char *in,  unsigned long inlen,
 int base64url_decode(const char *in,  unsigned long inlen,
                            unsigned char *out, unsigned long *outlen)
 {
-    return s_base64_decode_internal(in, inlen, out, outlen, map_base64url, insane);
+    return _base64_decode_internal(in, inlen, out, outlen, map_base64url, insane);
 }
 
 /**
@@ -207,7 +214,7 @@ int base64url_decode(const char *in,  unsigned long inlen,
 int base64url_strict_decode(const char *in,  unsigned long inlen,
                            unsigned char *out, unsigned long *outlen)
 {
-    return s_base64_decode_internal(in, inlen, out, outlen, map_base64url, strict);
+    return _base64_decode_internal(in, inlen, out, outlen, map_base64url, strict);
 }
 
 /**
@@ -221,9 +228,13 @@ int base64url_strict_decode(const char *in,  unsigned long inlen,
 int base64url_sane_decode(const char *in,  unsigned long inlen,
                            unsigned char *out, unsigned long *outlen)
 {
-    return s_base64_decode_internal(in, inlen, out, outlen, map_base64url, relaxed);
+    return _base64_decode_internal(in, inlen, out, outlen, map_base64url, relaxed);
 }
 #endif /* LTC_BASE64_URL */
 
 #endif
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

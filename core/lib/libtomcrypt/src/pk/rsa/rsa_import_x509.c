@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -9,7 +16,7 @@
 
 #ifdef LTC_MRSA
 
-static int s_rsa_decode(const unsigned char *in, unsigned long inlen, rsa_key *key)
+static int _rsa_decode(const unsigned char *in, unsigned long inlen, rsa_key *key)
 {
    /* now it should be SEQUENCE { INTEGER, INTEGER } */
    return der_decode_sequence_multi(in, inlen,
@@ -34,14 +41,15 @@ int rsa_import_x509(const unsigned char *in, unsigned long inlen, rsa_key *key)
    LTC_ARGCHK(ltc_mp.name != NULL);
 
    /* init key */
-   if ((err = rsa_init(key)) != CRYPT_OK) {
+   if ((err = mp_init_multi(&key->e, &key->d, &key->N, &key->dQ,
+                            &key->dP, &key->qP, &key->p, &key->q, NULL)) != CRYPT_OK) {
       return err;
    }
 
    if ((err = x509_decode_public_key_from_certificate(in, inlen,
-                                                      LTC_OID_RSA, LTC_ASN1_NULL,
+                                                      PKA_RSA, LTC_ASN1_NULL,
                                                       NULL, NULL,
-                                                      (public_key_decode_cb)s_rsa_decode, key)) != CRYPT_OK) {
+                                                      (public_key_decode_cb)_rsa_decode, key)) != CRYPT_OK) {
       rsa_free(key);
    } else {
       key->type = PK_PUBLIC;
@@ -52,3 +60,7 @@ int rsa_import_x509(const unsigned char *in, unsigned long inlen, rsa_key *key)
 
 #endif /* LTC_MRSA */
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

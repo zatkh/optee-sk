@@ -32,14 +32,16 @@
 #include <console.h>
 #include <io.h>
 #include <stdint.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/delay.h>
 #include <mm/core_mmu.h>
 #include <mm/core_memprot.h>
 #include <mm/tee_pager.h>
 #include <platform_config.h>
+#include <sm/tee_mon.h>
 #include <sm/optee_smc.h>
 #include <sm/psci.h>
 #include <arm32.h>
@@ -69,11 +71,9 @@ int psci_features(uint32_t psci_fid)
 int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 		uint32_t context_id)
 {
-	vaddr_t base = (vaddr_t)phys_to_virt(SUNXI_PRCM_BASE, MEM_AREA_IO_SEC,
-					     SUNXI_PRCM_REG_SIZE);
+	vaddr_t base = (vaddr_t)phys_to_virt(SUNXI_PRCM_BASE, MEM_AREA_IO_SEC);
 	vaddr_t cpucfg = (vaddr_t)phys_to_virt(SUNXI_CPUCFG_BASE,
-					       MEM_AREA_IO_SEC,
-					       SUNXI_CPUCFG_REG_SIZE);
+					       MEM_AREA_IO_SEC);
 	uint32_t tmpff;
 	uint32_t val;
 
@@ -84,7 +84,7 @@ int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 		return PSCI_RET_INVALID_PARAMETERS;
 
 	/* set secondary cores' NS entry addresses */
-	boot_set_core_ns_entry(core_idx, entry, context_id);
+	generic_boot_set_core_ns_entry(core_idx, entry, context_id);
 
 	val = virt_to_phys((void *)TEE_TEXT_VA_START);
 
@@ -132,11 +132,9 @@ int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 int __noreturn psci_cpu_off(void)
 {
 	uint32_t core_id;
-	vaddr_t base = (vaddr_t)phys_to_virt(SUNXI_PRCM_BASE, MEM_AREA_IO_SEC,
-					     SUNXI_PRCM_REG_SIZE);
+	vaddr_t base = (vaddr_t)phys_to_virt(SUNXI_PRCM_BASE, MEM_AREA_IO_SEC);
 	vaddr_t cpucfg = (vaddr_t)phys_to_virt(SUNXI_CPUCFG_BASE,
-					       MEM_AREA_IO_SEC,
-					       SUNXI_CPUCFG_REG_SIZE);
+					       MEM_AREA_IO_SEC);
 
 	core_id = get_core_pos();
 

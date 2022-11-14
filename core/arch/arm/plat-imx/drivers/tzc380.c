@@ -21,11 +21,7 @@
  */
 #ifndef TZASC2_BASE
 #define TZASC2_BASE			0
-#else
-register_phys_mem(MEM_AREA_IO_SEC, TZASC2_BASE, TZASC_SIZE);
 #endif
-
-register_phys_mem(MEM_AREA_IO_SEC, TZASC_BASE, TZASC_SIZE);
 
 static TEE_Result imx_configure_tzasc(void)
 {
@@ -33,12 +29,12 @@ static TEE_Result imx_configure_tzasc(void)
 	int end = 1;
 	int i = 0;
 
-	addr[0] = core_mmu_get_va(TZASC_BASE, MEM_AREA_IO_SEC, 1);
+	addr[0] = core_mmu_get_va(TZASC_BASE, MEM_AREA_IO_SEC);
 
 	if (IS_ENABLED(CFG_MX6Q) || IS_ENABLED(CFG_MX6D) ||
 	    IS_ENABLED(CFG_MX6DL)) {
 		assert(TZASC2_BASE != 0);
-		addr[1] = core_mmu_get_va(TZASC2_BASE, MEM_AREA_IO_SEC, 1);
+		addr[1] = core_mmu_get_va(TZASC2_BASE, MEM_AREA_IO_SEC);
 		end = 2;
 	}
 
@@ -54,11 +50,8 @@ static TEE_Result imx_configure_tzasc(void)
 		region = tzc_auto_configure(CFG_SHMEM_START, CFG_SHMEM_SIZE,
 			     TZC_ATTR_SP_ALL, region);
 		tzc_dump_state();
-
 		if (tzc_regions_lockdown() != TEE_SUCCESS)
 			panic("Region lockdown failed!");
-
-		tzc_dump_state();
 	}
 	return TEE_SUCCESS;
 }

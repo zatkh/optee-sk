@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -10,7 +17,7 @@
 */
 #ifdef LTC_ADLER32
 
-static const unsigned long s_adler32_base = 65521;
+static const unsigned long _adler32_base = 65521;
 
 void adler32_init(adler32_state *ctx)
 {
@@ -35,10 +42,10 @@ void adler32_update(adler32_state *ctx, const unsigned char *input, unsigned lon
          length--;
       } while (length % 8 != 0);
 
-      if (s1 >= s_adler32_base) {
-         s1 -= s_adler32_base;
+      if (s1 >= _adler32_base) {
+         s1 -= _adler32_base;
       }
-      s2 %= s_adler32_base;
+      s2 %= _adler32_base;
    }
 
    while (length > 0) {
@@ -62,14 +69,14 @@ void adler32_update(adler32_state *ctx, const unsigned char *input, unsigned lon
       length -= 8;
       input += 8;
 
-      if (s1 >= s_adler32_base) {
-         s1 -= s_adler32_base;
+      if (s1 >= _adler32_base) {
+         s1 -= _adler32_base;
       }
-      s2 %= s_adler32_base;
+      s2 %= _adler32_base;
    }
 
-   LTC_ARGCHKVD(s1 < s_adler32_base);
-   LTC_ARGCHKVD(s2 < s_adler32_base);
+   LTC_ARGCHKVD(s1 < _adler32_base);
+   LTC_ARGCHKVD(s2 < _adler32_base);
 
    ctx->s[0] = (unsigned short)s1;
    ctx->s[1] = (unsigned short)s2;
@@ -112,7 +119,7 @@ int adler32_test(void)
    unsigned char out[4];
    adler32_state ctx;
    adler32_init(&ctx);
-   adler32_update(&ctx, in, XSTRLEN(in));
+   adler32_update(&ctx, in, strlen(in));
    adler32_finish(&ctx, out, 4);
    if (compare_testvector(adler32, 4, out, 4, "adler32", 0)) {
       return CRYPT_FAIL_TESTVECTOR;
@@ -121,3 +128,7 @@ int adler32_test(void)
 #endif
 }
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

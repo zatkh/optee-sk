@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 /* The precomputed tables for AES */
 /*
 Te0[x] = S [x].[02, 01, 01, 03];
@@ -15,7 +22,7 @@ Td3[x] = Si[x].[09, 0d, 0b, 0e];
 Td4[x] = Si[x].[01, 01, 01, 01];
 */
 
-#ifdef LTC_AES_TAB_C
+#ifdef __LTC_AES_TAB_C__
 
 /**
   @file aes_tab.c
@@ -1019,4 +1026,8 @@ static const ulong32 rcon[] = {
 };
 #endif
 
-#endif /* LTC_AES_TAB_C */
+#endif /* __LTC_AES_TAB_C__ */
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

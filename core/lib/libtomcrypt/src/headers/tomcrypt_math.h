@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+/* SPDX-License-Identifier: BSD-2-Clause */
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /** math functions **/
 
@@ -509,10 +516,10 @@ typedef struct {
 
 extern ltc_math_descriptor ltc_mp;
 
-int ltc_init_multi(void **a, ...) LTC_NULL_TERMINATED;
-int ltc_init_multi_size(int size_bits, void **a, ...) LTC_NULL_TERMINATED;
-void ltc_deinit_multi(void *a, ...) LTC_NULL_TERMINATED;
-void ltc_cleanup_multi(void **a, ...) LTC_NULL_TERMINATED;
+int ltc_init_multi(void **a, ...);
+int ltc_init_multi_size(int size_bits, void **a, ...);
+void ltc_deinit_multi(void *a, ...);
+void ltc_cleanup_multi(void **a, ...);
 
 #ifdef LTM_DESC
 extern const ltc_math_descriptor ltm_desc;
@@ -525,3 +532,7 @@ extern const ltc_math_descriptor tfm_desc;
 #ifdef GMP_DESC
 extern const ltc_math_descriptor gmp_desc;
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

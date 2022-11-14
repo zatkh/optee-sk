@@ -63,7 +63,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct hi16xx_uart_data *pd =
 		container_of(chip, struct hi16xx_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, HI16XX_UART_REG_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void hi16xx_uart_flush(struct serial_chip *chip)
@@ -108,7 +108,7 @@ static const struct serial_ops hi16xx_uart_ops = {
 	.have_rx_data = hi16xx_uart_have_rx_data,
 	.putc = hi16xx_uart_putc,
 };
-DECLARE_KEEP_PAGER(hi16xx_uart_ops);
+KEEP_PAGER(hi16xx_uart_ops);
 
 void hi16xx_uart_init(struct hi16xx_uart_data *pd, paddr_t base,
 		      uint32_t uart_clk, uint32_t baud_rate)

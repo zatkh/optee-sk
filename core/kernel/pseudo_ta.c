@@ -2,7 +2,6 @@
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
  * Copyright (c) 2015, Linaro Limited
- * Copyright (c) 2020, Arm Limited
  */
 #include <initcall.h>
 #include <kernel/linker.h>
@@ -11,22 +10,23 @@
 #include <kernel/tee_ta_manager.h>
 #include <mm/core_memprot.h>
 #include <mm/mobj.h>
+#include <sm/tee_mon.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
 #include <types_ext.h>
 
 #ifdef CFG_SECURE_DATA_PATH
-static bool client_is_secure(struct ts_session *s)
+static bool client_is_secure(struct tee_ta_session *s)
 {
 	/* rely on core entry to have constrained client IDs */
-	if (to_ta_session(s)->clnt_id.login == TEE_LOGIN_TRUSTED_APP)
+	if (s->clnt_id.login == TEE_LOGIN_TRUSTED_APP)
 		return true;
 
 	return false;
 }
 
-static bool validate_in_param(struct ts_session *s, struct mobj *mobj)
+static bool validate_in_param(struct tee_ta_session *s, struct mobj *mobj)
 {
 	/* Supplying NULL to query buffer size is OK */
 	if (!mobj)
@@ -43,8 +43,8 @@ static bool validate_in_param(struct ts_session *s, struct mobj *mobj)
 	return false;
 }
 #else
-static bool validate_in_param(struct ts_session *s __unused,
-			      struct mobj *mobj __unused)
+static bool validate_in_param(struct tee_ta_session *s __unused,
+				struct mobj *mobj __unused)
 {
 	/* At this point, core has filled only valid accessible memref mobj */
 	return true;
@@ -52,7 +52,7 @@ static bool validate_in_param(struct ts_session *s __unused,
 #endif
 
 /* Maps pseudo TA params */
-static TEE_Result copy_in_param(struct ts_session *s __maybe_unused,
+static TEE_Result copy_in_param(struct tee_ta_session *s __maybe_unused,
 				struct tee_ta_param *param,
 				TEE_Param tee_param[TEE_NUM_PARAMS],
 				bool did_map[TEE_NUM_PARAMS])
@@ -75,18 +75,21 @@ static TEE_Result copy_in_param(struct ts_session *s __maybe_unused,
 			mem = &param->u[n].mem;
 			if (!validate_in_param(s, mem->mobj))
 				return TEE_ERROR_BAD_PARAMETERS;
-			if (mem->size) {
-				TEE_Result res = mobj_inc_map(mem->mobj);
+			va = mobj_get_va(mem->mobj, mem->offs);
+			if (!va && mem->size) {
+				TEE_Result res;
 
+				res = mobj_inc_map(mem->mobj);
 				if (res)
 					return res;
 				did_map[n] = true;
-				va = mobj_get_va(mem->mobj, mem->offs,
-						 mem->size);
+				va = mobj_get_va(mem->mobj, mem->offs);
 				if (!va)
 					return TEE_ERROR_BAD_PARAMETERS;
-			} else {
-				va = NULL;
+				if (mem->size &&
+				    !mobj_get_va(mem->mobj,
+						 mem->offs + mem->size - 1))
+					return TEE_ERROR_BAD_PARAMETERS;
 			}
 
 			tee_param[n].memref.buffer = va;
@@ -138,114 +141,99 @@ static void unmap_mapped_param(struct tee_ta_param *param,
 	}
 }
 
-static TEE_Result pseudo_ta_enter_open_session(struct ts_session *s)
+static TEE_Result pseudo_ta_enter_open_session(struct tee_ta_session *s,
+			struct tee_ta_param *param, TEE_ErrorOrigin *eo)
 {
 	TEE_Result res = TEE_SUCCESS;
 	struct pseudo_ta_ctx *stc = to_pseudo_ta_ctx(s->ctx);
-	struct tee_ta_session *ta_sess = to_ta_session(s);
-	TEE_Param tee_param[TEE_NUM_PARAMS] = { };
+	TEE_Param tee_param[TEE_NUM_PARAMS];
 	bool did_map[TEE_NUM_PARAMS] = { false };
 
-	ts_push_current_session(s);
-	ta_sess->err_origin = TEE_ORIGIN_TRUSTED_APP;
+	tee_ta_push_current_session(s);
+	*eo = TEE_ORIGIN_TRUSTED_APP;
 
-	if (stc->ctx.ref_count == 1 && stc->pseudo_ta->create_entry_point) {
+	if ((s->ctx->ref_count == 1) && stc->pseudo_ta->create_entry_point) {
 		res = stc->pseudo_ta->create_entry_point();
 		if (res != TEE_SUCCESS)
 			goto out;
 	}
 
 	if (stc->pseudo_ta->open_session_entry_point) {
-		void **user_ctx = &s->user_ctx;
-		uint32_t param_types = 0;
-
-		if (ta_sess->param) {
-			res = copy_in_param(s, ta_sess->param, tee_param,
-					    did_map);
-			if (res != TEE_SUCCESS) {
-				unmap_mapped_param(ta_sess->param, did_map);
-				ta_sess->err_origin = TEE_ORIGIN_TEE;
-				goto out;
-			}
-			param_types = ta_sess->param->types;
-		}
-
-		res = stc->pseudo_ta->open_session_entry_point(param_types,
-							       tee_param,
-							       user_ctx);
-		if (ta_sess->param) {
-			update_out_param(tee_param, ta_sess->param);
-			unmap_mapped_param(ta_sess->param, did_map);
-		}
-	}
-
-out:
-	ts_pop_current_session();
-	return res;
-}
-
-static TEE_Result pseudo_ta_enter_invoke_cmd(struct ts_session *s, uint32_t cmd)
-{
-	TEE_Result res = TEE_SUCCESS;
-	struct pseudo_ta_ctx *stc = to_pseudo_ta_ctx(s->ctx);
-	struct tee_ta_session *ta_sess = to_ta_session(s);
-	uint32_t param_types = 0;
-	TEE_Param tee_param[TEE_NUM_PARAMS] = { };
-	bool did_map[TEE_NUM_PARAMS] = { false };
-
-	ts_push_current_session(s);
-	if (ta_sess->param) {
-		res = copy_in_param(s, ta_sess->param, tee_param, did_map);
+		res = copy_in_param(s, param, tee_param, did_map);
 		if (res != TEE_SUCCESS) {
-			unmap_mapped_param(ta_sess->param, did_map);
-			ta_sess->err_origin = TEE_ORIGIN_TEE;
+			unmap_mapped_param(param, did_map);
+			*eo = TEE_ORIGIN_TEE;
 			goto out;
 		}
-		param_types = ta_sess->param->types;
+
+		res = stc->pseudo_ta->open_session_entry_point(param->types,
+								tee_param,
+								&s->user_ctx);
+		update_out_param(tee_param, param);
+		unmap_mapped_param(param, did_map);
 	}
 
-	ta_sess->err_origin = TEE_ORIGIN_TRUSTED_APP;
-	res = stc->pseudo_ta->invoke_command_entry_point(s->user_ctx, cmd,
-							 param_types,
-							 tee_param);
-	if (ta_sess->param) {
-		update_out_param(tee_param, ta_sess->param);
-		unmap_mapped_param(ta_sess->param, did_map);
-	}
 out:
-	ts_pop_current_session();
+	tee_ta_pop_current_session();
 	return res;
 }
 
-static void pseudo_ta_enter_close_session(struct ts_session *s)
+static TEE_Result pseudo_ta_enter_invoke_cmd(struct tee_ta_session *s,
+			uint32_t cmd, struct tee_ta_param *param,
+			TEE_ErrorOrigin *eo)
 {
+	TEE_Result res;
 	struct pseudo_ta_ctx *stc = to_pseudo_ta_ctx(s->ctx);
-	void *user_ctx = s->user_ctx;
+	TEE_Param tee_param[TEE_NUM_PARAMS];
+	bool did_map[TEE_NUM_PARAMS] = { false };
 
-	ts_push_current_session(s);
+	tee_ta_push_current_session(s);
+	res = copy_in_param(s, param, tee_param, did_map);
+	if (res != TEE_SUCCESS) {
+		unmap_mapped_param(param, did_map);
+		*eo = TEE_ORIGIN_TEE;
+		goto out;
+	}
 
-	if (stc->pseudo_ta->close_session_entry_point)
-		stc->pseudo_ta->close_session_entry_point(user_ctx);
-
-	if (stc->ctx.ref_count == 1 && stc->pseudo_ta->destroy_entry_point)
-		stc->pseudo_ta->destroy_entry_point();
-
-	ts_pop_current_session();
+	*eo = TEE_ORIGIN_TRUSTED_APP;
+	res = stc->pseudo_ta->invoke_command_entry_point(s->user_ctx, cmd,
+							 param->types,
+							 tee_param);
+	update_out_param(tee_param, param);
+	unmap_mapped_param(param, did_map);
+out:
+	tee_ta_pop_current_session();
+	return res;
 }
 
-static void pseudo_ta_destroy(struct ts_ctx *ctx)
+static void pseudo_ta_enter_close_session(struct tee_ta_session *s)
+{
+	struct pseudo_ta_ctx *stc = to_pseudo_ta_ctx(s->ctx);
+
+	tee_ta_push_current_session(s);
+
+	if (stc->pseudo_ta->close_session_entry_point)
+		stc->pseudo_ta->close_session_entry_point(s->user_ctx);
+
+	if ((s->ctx->ref_count == 1) && stc->pseudo_ta->destroy_entry_point)
+		stc->pseudo_ta->destroy_entry_point();
+
+	tee_ta_pop_current_session();
+}
+
+static void pseudo_ta_destroy(struct tee_ta_ctx *ctx)
 {
 	free(to_pseudo_ta_ctx(ctx));
 }
 
-static const struct ts_ops pseudo_ta_ops = {
+static const struct tee_ta_ops pseudo_ta_ops = {
 	.enter_open_session = pseudo_ta_enter_open_session,
 	.enter_invoke_cmd = pseudo_ta_enter_invoke_cmd,
 	.enter_close_session = pseudo_ta_enter_close_session,
 	.destroy = pseudo_ta_destroy,
 };
 
-bool is_pseudo_ta_ctx(struct ts_ctx *ctx)
+bool is_pseudo_ta_ctx(struct tee_ta_ctx *ctx)
 {
 	return ctx->ops == &pseudo_ta_ops;
 }
@@ -313,17 +301,14 @@ TEE_Result tee_ta_init_pseudo_ta_session(const TEE_UUID *uuid,
 	ctx = &stc->ctx;
 
 	ctx->ref_count = 1;
+	s->ctx = ctx;
 	ctx->flags = ta->flags;
 	stc->pseudo_ta = ta;
-	ctx->ts_ctx.uuid = ta->uuid;
-	ctx->ts_ctx.ops = &pseudo_ta_ops;
-
-	mutex_lock(&tee_ta_mutex);
-	s->ts_sess.ctx = &ctx->ts_ctx;
+	ctx->uuid = ta->uuid;
+	ctx->ops = &pseudo_ta_ops;
 	TAILQ_INSERT_TAIL(&tee_ctxes, ctx, link);
-	mutex_unlock(&tee_ta_mutex);
 
-	DMSG("%s : %pUl", stc->pseudo_ta->name, (void *)&ctx->ts_ctx.uuid);
+	DMSG("%s : %pUl", stc->pseudo_ta->name, (void *)&ctx->uuid);
 
 	return TEE_SUCCESS;
 }

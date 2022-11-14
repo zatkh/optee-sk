@@ -1,11 +1,18 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
 #ifdef LTC_MDH
 
-static int s_dh_groupsize_to_keysize(int groupsize)
+static int _dh_groupsize_to_keysize(int groupsize)
 {
    /* The strength estimates from https://tools.ietf.org/html/rfc3526#section-8
     * We use "Estimate 2" to get an appropriate private key (exponent) size.
@@ -48,7 +55,7 @@ int dh_generate_key(prng_state *prng, int wprng, dh_key *key)
       return err;
    }
 
-   keysize = s_dh_groupsize_to_keysize(mp_unsigned_bin_size(key->prime));
+   keysize = _dh_groupsize_to_keysize(mp_unsigned_bin_size(key->prime));
    if (keysize == 0) {
       err = CRYPT_INVALID_KEYSIZE;
       goto freemp;
@@ -88,3 +95,7 @@ freemp:
 }
 
 #endif /* LTC_MDH */
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

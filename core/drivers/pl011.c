@@ -79,7 +79,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct pl011_data *pd =
 		container_of(chip, struct pl011_data, chip);
 
-	return io_pa_or_va(&pd->base, PL011_REG_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void pl011_flush(struct serial_chip *chip)
@@ -132,7 +132,7 @@ static const struct serial_ops pl011_ops = {
 	.have_rx_data = pl011_have_rx_data,
 	.putc = pl011_putc,
 };
-DECLARE_KEEP_PAGER(pl011_ops);
+KEEP_PAGER(pl011_ops);
 
 void pl011_init(struct pl011_data *pd, paddr_t pbase, uint32_t uart_clk,
 		uint32_t baud_rate)
@@ -142,7 +142,7 @@ void pl011_init(struct pl011_data *pd, paddr_t pbase, uint32_t uart_clk,
 	pd->base.pa = pbase;
 	pd->chip.ops = &pl011_ops;
 
-	base = io_pa_or_va(&pd->base, PL011_REG_SIZE);
+	base = io_pa_or_va(&pd->base);
 
 	/* Clear all errors */
 	io_write32(base + UART_RSR_ECR, 0);
@@ -190,7 +190,7 @@ static int pl011_dev_init(struct serial_chip *chip, const void *fdt, int offs,
 	if (parms && parms[0])
 		IMSG("pl011: device parameters ignored (%s)", parms);
 
-	if (dt_map_dev(fdt, offs, &vbase, &size, DT_MAP_AUTO) < 0)
+	if (dt_map_dev(fdt, offs, &vbase, &size) < 0)
 		return -1;
 
 	if (size != 0x1000) {
@@ -222,9 +222,8 @@ static const struct dt_device_match pl011_match_table[] = {
 	{ 0 }
 };
 
-DEFINE_DT_DRIVER(pl011_dt_driver) = {
+const struct dt_driver pl011_dt_driver __dt_driver = {
 	.name = "pl011",
-	.type = DT_DRIVER_UART,
 	.match_table = pl011_match_table,
 	.driver = &pl011_driver,
 };

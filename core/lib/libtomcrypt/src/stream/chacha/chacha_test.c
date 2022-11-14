@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /* The implementation is based on:
  * chacha-ref.c version 20080118
@@ -33,7 +40,7 @@ int chacha_test(void)
    chacha_state st;
    int err;
 
-   len = XSTRLEN(pt);
+   len = strlen(pt);
 
    /* crypt piece by piece - using chacha_ivctr32() */
    if ((err = chacha_setup(&st, k, sizeof(k), 20)) != CRYPT_OK)                            return err;
@@ -72,3 +79,7 @@ int chacha_test(void)
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

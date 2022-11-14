@@ -21,7 +21,6 @@ TEE_LOAD_ADDR_RE = re.compile(r'TEE load address @ (?P<load_addr>0x[0-9a-f]+)')
 STACK_ADDR_RE = re.compile(
     r'[UEIDFM]/(TC|LD):(\?*|[0-9]*) [0-9]* +(?P<addr>0x[0-9a-f]+)')
 ABORT_ADDR_RE = re.compile(r'-abort at address (?P<addr>0x[0-9a-f]+)')
-TA_PANIC_RE = re.compile(r'TA panicked with code (?P<code>0x[0-9a-f]+)')
 REGION_RE = re.compile(r'region +[0-9]+: va (?P<addr>0x[0-9a-f]+) '
                        r'pa 0x[0-9a-f]+ size (?P<size>0x[0-9a-f]+)'
                        r'( flags .{4} (\[(?P<elf_idx>[0-9]+)\])?)?')
@@ -75,39 +74,6 @@ Sample usage:
   <paste function graph here>
   ^D
 '''
-
-tee_result_names = {
-        '0xf0100001': 'TEE_ERROR_CORRUPT_OBJECT',
-        '0xf0100002': 'TEE_ERROR_CORRUPT_OBJECT_2',
-        '0xf0100003': 'TEE_ERROR_STORAGE_NOT_AVAILABLE',
-        '0xf0100004': 'TEE_ERROR_STORAGE_NOT_AVAILABLE_2',
-        '0xf0100006': 'TEE_ERROR_CIPHERTEXT_INVALID ',
-        '0xffff0000': 'TEE_ERROR_GENERIC',
-        '0xffff0001': 'TEE_ERROR_ACCESS_DENIED',
-        '0xffff0002': 'TEE_ERROR_CANCEL',
-        '0xffff0003': 'TEE_ERROR_ACCESS_CONFLICT',
-        '0xffff0004': 'TEE_ERROR_EXCESS_DATA',
-        '0xffff0005': 'TEE_ERROR_BAD_FORMAT',
-        '0xffff0006': 'TEE_ERROR_BAD_PARAMETERS',
-        '0xffff0007': 'TEE_ERROR_BAD_STATE',
-        '0xffff0008': 'TEE_ERROR_ITEM_NOT_FOUND',
-        '0xffff0009': 'TEE_ERROR_NOT_IMPLEMENTED',
-        '0xffff000a': 'TEE_ERROR_NOT_SUPPORTED',
-        '0xffff000b': 'TEE_ERROR_NO_DATA',
-        '0xffff000c': 'TEE_ERROR_OUT_OF_MEMORY',
-        '0xffff000d': 'TEE_ERROR_BUSY',
-        '0xffff000e': 'TEE_ERROR_COMMUNICATION',
-        '0xffff000f': 'TEE_ERROR_SECURITY',
-        '0xffff0010': 'TEE_ERROR_SHORT_BUFFER',
-        '0xffff0011': 'TEE_ERROR_EXTERNAL_CANCEL',
-        '0xffff300f': 'TEE_ERROR_OVERFLOW',
-        '0xffff3024': 'TEE_ERROR_TARGET_DEAD',
-        '0xffff3041': 'TEE_ERROR_STORAGE_NO_SPACE',
-        '0xffff3071': 'TEE_ERROR_MAC_INVALID',
-        '0xffff3072': 'TEE_ERROR_SIGNATURE_INVALID',
-        '0xffff5000': 'TEE_ERROR_TIME_NOT_SET',
-        '0xffff5001': 'TEE_ERROR_TIME_NEEDS_RESET',
-    }
 
 
 def get_args():
@@ -163,7 +129,7 @@ class Symbolizer(object):
         self._arch = os.getenv('CROSS_COMPILE')
         if self._arch:
             return
-        p = subprocess.Popen(['file', '-L', elf], stdout=subprocess.PIPE)
+        p = subprocess.Popen(['file', elf], stdout=subprocess.PIPE)
         output = p.stdout.readlines()
         p.terminate()
         if b'ARM aarch64,' in output[0]:
@@ -249,16 +215,9 @@ class Symbolizer(object):
             ret = '!!!'
         return ret
 
-    # Armv8.5 with Memory Tagging Extension (MTE)
-    def strip_armv85_mte_tag(self, addr):
-        i_addr = int(addr, 16)
-        i_addr &= ~(0xf << 56)
-        return '0x{:x}'.format(i_addr)
-
     def symbol_plus_offset(self, addr):
         ret = ''
         prevsize = 0
-        addr = self.strip_armv85_mte_tag(addr)
         reladdr = self.subtract_load_addr(addr)
         elf_name = self.elf_for_addr(addr)
         if elf_name is None:
@@ -352,8 +311,6 @@ class Symbolizer(object):
         if elf_name in self._sections:
             return
         elf = self.get_elf(elf_name)
-        if not elf:
-            return
         cmd = self.arch_prefix('objdump', elf)
         if not elf or not cmd:
             return
@@ -426,15 +383,7 @@ class Symbolizer(object):
                 post = match.end('addr')
                 self._out.write(line[:pre])
                 self._out.write(addr)
-                # The call stack contains return addresses (LR/ELR values).
-                # Heuristic: subtract 2 to obtain the call site of the function
-                # or the location of the exception. This value works for A64,
-                # A32 as well as Thumb.
-                pc = 0
-                lr = int(addr, 16)
-                if lr:
-                    pc = lr - 2
-                res = self.resolve('0x{:x}'.format(pc))
+                res = self.resolve(addr)
                 res = self.pretty_print_path(res)
                 self._out.write(' ' + res)
                 self._out.write(line[post:])
@@ -478,13 +427,6 @@ class Symbolizer(object):
             i = int(match.group('idx'))
             self._elfs[i] = [match.group('uuid'), match.group('load_addr'),
                              line]
-            return
-        match = re.search(TA_PANIC_RE, line)
-        if match:
-            code = match.group('code')
-            if code in tee_result_names:
-                line = line.strip() + ' (' + tee_result_names[code] + ')\n'
-            self._out.write(line)
             return
         match = re.search(TEE_LOAD_ADDR_RE, line)
         if match:

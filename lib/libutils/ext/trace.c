@@ -5,6 +5,7 @@
 
 #if defined(__KERNEL__)
 #include <platform_config.h>
+#include <kernel/misc.h>
 #endif
 
 #include <printk.h>
@@ -54,11 +55,10 @@ static char trace_level_to_string(int level, bool level_ok)
 	return lvl_strs[l];
 }
 
+#ifndef X64
 static int print_thread_id(char *buf, size_t bs)
 {
-#if CFG_NUM_THREADS > 100
-	int num_thread_digits = 3;
-#elif CFG_NUM_THREADS > 10
+#if CFG_NUM_THREADS > 9
 	int num_thread_digits = 2;
 #else
 	int num_thread_digits = 1;
@@ -74,22 +74,16 @@ static int print_thread_id(char *buf, size_t bs)
 #if defined(__KERNEL__)
 static int print_core_id(char *buf, size_t bs)
 {
-#if CFG_TEE_CORE_NB_CORE > 100
-	const int num_digits = 3;
-	const char qm[] = "???";
-#elif CFG_TEE_CORE_NB_CORE > 10
+#if CFG_TEE_CORE_NB_CORE > 10
 	const int num_digits = 2;
-	const char qm[] = "??";
 #else
 	const int num_digits = 1;
-	const char qm[] = "?";
 #endif
-	int core_id = trace_ext_get_core_id();
 
-	if (core_id >= 0)
-		return snprintk(buf, bs, "%0*u ", num_digits, core_id);
+	if (thread_get_exceptions() & THREAD_EXCP_FOREIGN_INTR)
+		return snprintk(buf, bs, "%0*zu ", num_digits, get_core_pos());
 	else
-		return snprintk(buf, bs, "%s ", qm);
+		return snprintk(buf, bs, "%s ", num_digits > 1 ? "??" : "?");
 }
 #else  /* defined(__KERNEL__) */
 static int print_core_id(char *buf __unused, size_t bs __unused)
@@ -97,6 +91,7 @@ static int print_core_id(char *buf __unused, size_t bs __unused)
 	return 0;
 }
 #endif
+#endif /*!X64*/
 
 /* Format trace of user ta. Inline with kernel ta */
 void trace_printf(const char *function, int line, int level, bool level_ok,
@@ -133,6 +128,11 @@ void trace_vprintf(const char *function, int line, int level, bool level_ok,
 	boffs += res;
 
 	if (level_ok && (BIT(level) & CFG_MSG_LONG_PREFIX_MASK)) {
+		/*
+		 * TODO: currently working with a single core and thread.
+		 * Thread Id is not defined.
+		 */
+#ifndef X64
 		/* Print the core ID if in atomic context  */
 		res = print_core_id(buf + boffs, sizeof(buf) - boffs);
 		if (res < 0)
@@ -144,6 +144,7 @@ void trace_vprintf(const char *function, int line, int level, bool level_ok,
 		if (res < 0)
 			return;
 		boffs += res;
+#endif //x64
 
 		if (function) {
 			res = snprintk(buf + boffs, sizeof(buf) - boffs, "%s:%d ",

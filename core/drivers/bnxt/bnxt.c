@@ -216,11 +216,10 @@ static TEE_Result bnxt_init(void)
 {
 	bnxt_access_window_virt_addr =
 		(vaddr_t)phys_to_virt(NIC400_BNXT_IDM_IO_CONTROL_DIRECT,
-				      MEM_AREA_IO_SEC, sizeof(uint32_t));
+				      MEM_AREA_IO_SEC);
 	bnxt_indirect_dest_addr =
 		(vaddr_t)phys_to_virt(BNXT_INDIRECT_BASE,
-				      MEM_AREA_IO_SEC,
-				      BNXT_INDIRECT_WINDOW_SIZE);
+				      MEM_AREA_IO_SEC);
 	return TEE_SUCCESS;
 }
 driver_init(bnxt_init);

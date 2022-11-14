@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2019, Linaro Limited
- * Copyright (c) 2020, Arm Limited
  */
 
 #include <asm.S>
@@ -52,13 +51,11 @@ FUNC _ldelf_start , :
 
 2:	bl	ldelf
 	mov	x0, #0
-	bl	_ldelf_return
+	bl	utee_return
 3:	mov	x0, #0
-	bl	_ldelf_panic
+	bl	utee_panic
 reloc_begin_rel:
     .word __reloc_begin - reloc_begin_rel
 reloc_end_rel:
     .word __reloc_end - reloc_end_rel
 END_FUNC _ldelf_start
-
-BTI(emit_aarch64_feature_1_and     GNU_PROPERTY_AARCH64_FEATURE_1_BTI)

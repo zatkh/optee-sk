@@ -6,6 +6,7 @@
 #include <arm32.h>
 #include <arm32_macros.S>
 #include <asm.S>
+#include <kernel/unwind.h>
 
 .section .text
 .balign 4
@@ -14,6 +15,7 @@
 #define STM32MP1_NSACR_PRESERVE_MASK	(0xfff << 20)
 
 FUNC plat_cpu_reset_early , :
+UNWIND(	.fnstart)
 	ldr	r0, =SCR_SIF
 	write_scr r0
 
@@ -24,4 +26,5 @@ FUNC plat_cpu_reset_early , :
 
 	isb
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early

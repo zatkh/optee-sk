@@ -11,7 +11,7 @@
 #include <string.h>
 #include <tee/tee_fs_rpc.h>
 
-static uint32_t get_instance_id(struct ts_session *sess)
+static uint32_t get_instance_id(struct tee_ta_session *sess)
 {
 	return sess->ctx->ops->get_instance_id(sess->ctx);
 }
@@ -19,10 +19,9 @@ static uint32_t get_instance_id(struct ts_session *sess)
 static TEE_Result socket_open(uint32_t instance_id, uint32_t param_types,
 			      TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct thread_param tpm[4] = { };
-	struct mobj *mobj = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	void *va = NULL;
+	struct mobj *mobj;
+	TEE_Result res;
+	void *va;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 					  TEE_PARAM_TYPE_MEMREF_INPUT,
 					  TEE_PARAM_TYPE_VALUE_INPUT,
@@ -34,21 +33,22 @@ static TEE_Result socket_open(uint32_t instance_id, uint32_t param_types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_SOCKET,
-					THREAD_SHM_TYPE_APPLICATION,
-					params[1].memref.size, &mobj);
+	va = tee_fs_rpc_cache_alloc(params[1].memref.size, &mobj);
 	if (!va)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
 	memcpy(va, params[1].memref.buffer, params[1].memref.size);
 
-	tpm[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_OPEN, instance_id, 0);
-	tpm[1] = THREAD_PARAM_VALUE(IN,
-				    params[0].value.b, /* server port number */
-				    params[2].value.a, /* protocol */
-				    params[0].value.a  /* ip version */);
-	tpm[2] = THREAD_PARAM_MEMREF(IN, mobj, 0, params[1].memref.size);
-	tpm[3] = THREAD_PARAM_VALUE(OUT, 0, 0, 0);
+	struct thread_param tpm[4] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_OPEN,
+					 instance_id, 0),
+		[1] = THREAD_PARAM_VALUE(IN,
+				params[0].value.b, /* server port number */
+				params[2].value.a, /* protocol */
+				params[0].value.a  /* ip version */),
+		[2] = THREAD_PARAM_MEMREF(IN, mobj, 0, params[1].memref.size),
+		[3] = THREAD_PARAM_VALUE(OUT, 0, 0, 0),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_SOCKET, 4, tpm);
 	if (res == TEE_SUCCESS)
@@ -60,7 +60,6 @@ static TEE_Result socket_open(uint32_t instance_id, uint32_t param_types,
 static TEE_Result socket_close(uint32_t instance_id, uint32_t param_types,
 			       TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct thread_param tpm = { };
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 					  TEE_PARAM_TYPE_NONE,
 					  TEE_PARAM_TYPE_NONE,
@@ -72,8 +71,9 @@ static TEE_Result socket_close(uint32_t instance_id, uint32_t param_types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	tpm = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_CLOSE, instance_id,
-				 params[0].value.a);
+	struct thread_param tpm = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_CLOSE,
+						     instance_id,
+						     params[0].value.a);
 
 	return thread_rpc_cmd(OPTEE_RPC_CMD_SOCKET, 1, &tpm);
 }
@@ -81,10 +81,9 @@ static TEE_Result socket_close(uint32_t instance_id, uint32_t param_types,
 static TEE_Result socket_send(uint32_t instance_id, uint32_t param_types,
 			      TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct thread_param tpm[3] = { };
-	struct mobj *mobj = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	void *va = NULL;
+	struct mobj *mobj;
+	TEE_Result res;
+	void *va;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 					  TEE_PARAM_TYPE_MEMREF_INPUT,
 					  TEE_PARAM_TYPE_VALUE_OUTPUT,
@@ -96,19 +95,19 @@ static TEE_Result socket_send(uint32_t instance_id, uint32_t param_types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_SOCKET,
-					THREAD_SHM_TYPE_APPLICATION,
-					params[1].memref.size, &mobj);
+	va = tee_fs_rpc_cache_alloc(params[1].memref.size, &mobj);
 	if (!va)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
 	memcpy(va, params[1].memref.buffer, params[1].memref.size);
 
-	tpm[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_SEND, instance_id,
-				    params[0].value.a /* handle */);
-	tpm[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, params[1].memref.size);
-	tpm[2] = THREAD_PARAM_VALUE(INOUT, params[0].value.b, /* timeout */
-				     0, 0);
+	struct thread_param tpm[3] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_SEND, instance_id,
+					 params[0].value.a /* handle */),
+		[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, params[1].memref.size),
+		[2] = THREAD_PARAM_VALUE(INOUT, params[0].value.b, /* timeout */
+					 0, 0),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_SOCKET, 3, tpm);
 	params[2].value.a = tpm[2].u.value.b; /* transmitted bytes */
@@ -119,10 +118,9 @@ static TEE_Result socket_send(uint32_t instance_id, uint32_t param_types,
 static TEE_Result socket_recv(uint32_t instance_id, uint32_t param_types,
 			      TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct thread_param tpm[3] = { };
-	struct mobj *mobj = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	void *va = NULL;
+	struct mobj *mobj;
+	TEE_Result res;
+	void *va;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 					  TEE_PARAM_TYPE_MEMREF_OUTPUT,
 					  TEE_PARAM_TYPE_NONE,
@@ -134,25 +132,25 @@ static TEE_Result socket_recv(uint32_t instance_id, uint32_t param_types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	if (params[1].memref.size) {
-		va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_SOCKET,
-						THREAD_SHM_TYPE_APPLICATION,
-						params[1].memref.size, &mobj);
-		if (!va)
-			return TEE_ERROR_OUT_OF_MEMORY;
-	}
+	va = tee_fs_rpc_cache_alloc(params[1].memref.size, &mobj);
+	if (!va)
+		return TEE_ERROR_OUT_OF_MEMORY;
 
-	tpm[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_RECV, instance_id,
-				    params[0].value.a /* handle */);
-	tpm[1] = THREAD_PARAM_MEMREF(OUT, mobj, 0, params[1].memref.size);
-	tpm[2] = THREAD_PARAM_VALUE(IN, params[0].value.b /* timeout */, 0, 0);
+	struct thread_param tpm[3] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_RECV, instance_id,
+					 params[0].value.a /* handle */),
+		[1] = THREAD_PARAM_MEMREF(OUT, mobj, 0, params[1].memref.size),
+		[2] = THREAD_PARAM_VALUE(IN, params[0].value.b /* timeout */,
+					 0, 0),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_SOCKET, 3, tpm);
 
-	if (params[1].memref.size)
-		memcpy(params[1].memref.buffer, va,
-		       MIN(params[1].memref.size, tpm[1].u.memref.size));
+	if (tpm[1].u.memref.size > params[1].memref.size)
+		return TEE_ERROR_GENERIC;
 	params[1].memref.size = tpm[1].u.memref.size;
+	if (params[1].memref.size)
+		memcpy(params[1].memref.buffer, va, params[1].memref.size);
 
 	return res;
 }
@@ -160,10 +158,9 @@ static TEE_Result socket_recv(uint32_t instance_id, uint32_t param_types,
 static TEE_Result socket_ioctl(uint32_t instance_id, uint32_t param_types,
 			       TEE_Param params[TEE_NUM_PARAMS])
 {
-	struct thread_param tpm[3] = { };
-	struct mobj *mobj = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	void *va = NULL;
+	struct mobj *mobj;
+	TEE_Result res;
+	void *va;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 					  TEE_PARAM_TYPE_MEMREF_INOUT,
 					  TEE_PARAM_TYPE_NONE,
@@ -175,19 +172,22 @@ static TEE_Result socket_ioctl(uint32_t instance_id, uint32_t param_types,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_SOCKET,
-					THREAD_SHM_TYPE_APPLICATION,
-					params[1].memref.size, &mobj);
+	va = tee_fs_rpc_cache_alloc(params[1].memref.size, &mobj);
 	if (!va)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
 	memcpy(va, params[1].memref.buffer, params[1].memref.size);
 
-	tpm[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_IOCTL, instance_id,
-				    params[0].value.a /* handle */);
-	tpm[1] = THREAD_PARAM_MEMREF(INOUT, mobj, 0, params[1].memref.size);
-	tpm[2] = THREAD_PARAM_VALUE(IN, params[0].value.b /* ioctl command */,
-				    0, 0);
+	struct thread_param tpm[3] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_SOCKET_IOCTL,
+					 instance_id,
+					 params[0].value.a /* handle */),
+		[1] = THREAD_PARAM_MEMREF(INOUT, mobj, 0,
+					  params[1].memref.size),
+		[2] = THREAD_PARAM_VALUE(IN,
+					 params[0].value.b /* ioctl command */,
+					 0, 0),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_SOCKET, 3, tpm);
 	if (tpm[1].u.memref.size <= params[1].memref.size)
@@ -217,10 +217,11 @@ static TEE_Result pta_socket_open_session(uint32_t param_types __unused,
 			TEE_Param pParams[TEE_NUM_PARAMS] __unused,
 			void **sess_ctx)
 {
-	struct ts_session *s = ts_get_calling_session();
+	struct tee_ta_session *s;
 
 	/* Check that we're called from a TA */
-	if (!s || !is_user_ta_ctx(s->ctx))
+	s = tee_ta_get_calling_session();
+	if (!s)
 		return TEE_ERROR_ACCESS_DENIED;
 
 	*sess_ctx = (void *)(vaddr_t)get_instance_id(s);

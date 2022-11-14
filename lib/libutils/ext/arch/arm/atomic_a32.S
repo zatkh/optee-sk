@@ -5,8 +5,6 @@
 
 #include <asm.S>
 
-	.section .note.GNU-stack,"",%progbits
-
 /* uint32_t atomic_inc32(uint32_t *v); */
 FUNC atomic_inc32 , :
 	ldrex	r1, [r0]

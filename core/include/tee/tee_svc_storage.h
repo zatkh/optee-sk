@@ -11,6 +11,13 @@
 #include <tee/tee_fs.h>
 
 /*
+ * Returns the appropriate tee_file_operations for the specified storage ID.
+ * The value TEE_STORAGE_PRIVATE will select the REE FS if available, otherwise
+ * RPMB.
+ */
+const struct tee_file_operations *tee_svc_storage_file_ops(uint32_t storage_id);
+
+/*
  * Persistant Object Functions
  */
 TEE_Result syscall_storage_obj_open(unsigned long storage_id, void *object_id,
@@ -59,5 +66,16 @@ TEE_Result syscall_storage_obj_seek(unsigned long obj, int32_t offset,
 void tee_svc_storage_close_all_enum(struct user_ta_ctx *utc);
 
 void tee_svc_storage_init(void);
+
+struct tee_pobj;
+TEE_Result tee_svc_storage_create_filename(void *buf, size_t blen,
+					   struct tee_pobj *po, bool transient);
+struct tee_fs_dirfile_fileh;
+TEE_Result
+tee_svc_storage_create_filename_dfh(void *buf, size_t blen,
+				    const struct tee_fs_dirfile_fileh *dfh);
+
+TEE_Result tee_svc_storage_create_dirname(void *buf, size_t blen,
+					  const TEE_UUID *uuid);
 
 #endif /* TEE_SVC_STORAGE_H */

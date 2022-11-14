@@ -338,7 +338,7 @@ static TEE_Result init_head_from_data(struct tee_fs_htree *ht,
 			}
 
 			if (idx)
-				return TEE_ERROR_CORRUPT_OBJECT;
+				return TEE_ERROR_SECURITY;
 		}
 	} else {
 		struct tee_fs_htree_image head[2];

@@ -26,7 +26,7 @@ static vaddr_t rng_base(void)
 
 	if (cpu_mmu_enabled()) {
 		if (!va)
-			va = phys_to_virt(RNG_BASE, MEM_AREA_IO_SEC, RNG_SIZE);
+			va = phys_to_virt(RNG_BASE, MEM_AREA_IO_SEC);
 		return (vaddr_t)va;
 	}
 	return RNG_BASE;
@@ -46,7 +46,7 @@ static inline int hwrng_waithost_fifo_full(void)
 	return 0;
 }
 
-TEE_Result hw_get_random_bytes(void *buf, size_t len)
+uint8_t hw_get_random_byte(void)
 {
 	/*
 	 * Only the HW RNG IP is used to generate the value through the
@@ -85,47 +85,41 @@ TEE_Result hw_get_random_bytes(void *buf, size_t len)
 #define _LOCAL_FIFO_SIZE 8     /* min 2, 4, 6, max 8 */
 
 	static uint8_t lfifo[_LOCAL_FIFO_SIZE];     /* local fifo */
-	static int pos;
+	static int pos = -1;
 
 	static int nbcall;  /* debug purpose - 0 is the initial value*/
 
 	volatile uint32_t tmpval[_LOCAL_FIFO_SIZE/2];
+	uint8_t value;
 	int i;
-
-	uint8_t *buffer = buf;
-	size_t buffer_pos = 0;
 
 	nbcall++;
 
-	while (buffer_pos < len) {
-		/* Refill our FIFO */
-		if (pos == 0) {
-			if (hwrng_waithost_fifo_full())
-				return TEE_ERROR_GENERIC;
-
-			/*
-			 * Read the FIFO according to the number of
-			 * expected elements
-			 */
-			for (i = 0; i < _LOCAL_FIFO_SIZE / 2; i++)
-				tmpval[i] = io_read32(rng_base() +
-						      RNG_VAL_OFFSET) & 0xFFFF;
-
-			/* Update the local SW fifo for next request */
-			pos = 0;
-			for (i = 0; i < _LOCAL_FIFO_SIZE / 2; i++) {
-				lfifo[pos] = tmpval[i] & 0xFF;
-				pos++;
-				lfifo[pos] = (tmpval[i] >> 8) & 0xFF;
-				pos++;
-			}
-			pos = 0;
-		}
-
-		buffer[buffer_pos++] = lfifo[pos++];
-		if (pos == _LOCAL_FIFO_SIZE)
-			pos = 0;
+	/* Retrieve data from local fifo */
+	if (pos >= 0) {
+		pos++;
+		value = lfifo[pos];
+		if (pos == (_LOCAL_FIFO_SIZE - 1))
+			pos = -1;
+		return value;
 	}
 
-	return TEE_SUCCESS;
+	if (hwrng_waithost_fifo_full())
+		return 0;
+
+	/* Read the FIFO according the number of expected element */
+	for (i = 0; i < _LOCAL_FIFO_SIZE / 2; i++)
+		tmpval[i] = io_read32(rng_base() + RNG_VAL_OFFSET) & 0xFFFF;
+
+	/* Update the local SW fifo for next request */
+	pos = 0;
+	for (i = 0; i < _LOCAL_FIFO_SIZE / 2; i++) {
+		lfifo[pos] = tmpval[i] & 0xFF;
+		pos++;
+		lfifo[pos] = (tmpval[i] >> 8) & 0xFF;
+		pos++;
+	};
+
+	pos = 0;
+	return lfifo[pos];
 }

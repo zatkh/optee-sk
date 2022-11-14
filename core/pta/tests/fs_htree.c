@@ -4,7 +4,6 @@
  */
 
 #include <assert.h>
-#include <kernel/ts_manager.h>
 #include <string.h>
 #include <tee/fs_htree.h>
 #include <tee/tee_fs_rpc.h>
@@ -32,8 +31,8 @@ static TEE_Result test_get_offs_size(enum tee_fs_htree_type type, size_t idx,
 {
 	const size_t node_size = sizeof(struct tee_fs_htree_node_image);
 	const size_t block_nodes = TEST_BLOCK_SIZE / (node_size * 2);
-	size_t pbn = 0;
-	size_t bidx = 0;
+	size_t pbn;
+	size_t bidx;
 
 	COMPILE_TIME_ASSERT(TEST_BLOCK_SIZE >
 			    sizeof(struct tee_fs_htree_node_image) * 2);
@@ -93,10 +92,10 @@ static TEE_Result test_read_init(void *aux, struct tee_fs_rpc_operation *op,
 				 enum tee_fs_htree_type type, size_t idx,
 				 uint8_t vers, void **data)
 {
-	TEE_Result res = TEE_SUCCESS;
+	TEE_Result res;
 	struct test_aux *a = aux;
-	size_t offs = 0;
-	size_t sz = 0;
+	size_t offs;
+	size_t sz;
 
 	res = test_get_offs_size(type, idx, vers, &offs, &sz);
 	if (res == TEE_SUCCESS) {
@@ -186,8 +185,8 @@ static uint32_t val_from_bn_n_salt(size_t bn, size_t n, uint8_t salt)
 
 static TEE_Result write_block(struct tee_fs_htree **ht, size_t bn, uint8_t salt)
 {
-	uint32_t b[TEST_BLOCK_SIZE / sizeof(uint32_t)] = { 0 };
-	size_t n = 0;
+	uint32_t b[TEST_BLOCK_SIZE / sizeof(uint32_t)];
+	size_t n;
 
 	for (n = 0; n < ARRAY_SIZE(b); n++)
 		b[n] = val_from_bn_n_salt(bn, n, salt);
@@ -197,9 +196,9 @@ static TEE_Result write_block(struct tee_fs_htree **ht, size_t bn, uint8_t salt)
 
 static TEE_Result read_block(struct tee_fs_htree **ht, size_t bn, uint8_t salt)
 {
-	TEE_Result res = TEE_SUCCESS;
-	uint32_t b[TEST_BLOCK_SIZE / sizeof(uint32_t)] = { 0 };
-	size_t n = 0;
+	TEE_Result res;
+	uint32_t b[TEST_BLOCK_SIZE / sizeof(uint32_t)];
+	size_t n;
 
 	res = tee_fs_htree_read_block(ht, bn, b);
 	if (res != TEE_SUCCESS)
@@ -223,7 +222,7 @@ static TEE_Result do_range(TEE_Result (*fn)(struct tee_fs_htree **ht,
 			   size_t num_blocks, size_t salt)
 {
 	TEE_Result res = TEE_SUCCESS;
-	size_t n = 0;
+	size_t n;
 
 	for (n = 0; n < num_blocks; n++) {
 		res = fn(ht, n + begin, salt);
@@ -240,7 +239,7 @@ static TEE_Result do_range_backwards(TEE_Result (*fn)(struct tee_fs_htree **ht,
 				     size_t num_blocks, size_t salt)
 {
 	TEE_Result res = TEE_SUCCESS;
-	size_t n = 0;
+	size_t n;
 
 	for (n = 0; n < num_blocks; n++) {
 		res = fn(ht, num_blocks - 1 - n + begin, salt);
@@ -254,14 +253,19 @@ out:
 static TEE_Result htree_test_rewrite(struct test_aux *aux, size_t num_blocks,
 				     size_t w_unsync_begin, size_t w_unsync_num)
 {
-	struct ts_session *sess = ts_get_current_session();
-	const TEE_UUID *uuid = &sess->ctx->uuid;
-	TEE_Result res = TEE_SUCCESS;
+	TEE_Result res;
 	struct tee_fs_htree *ht = NULL;
 	size_t salt = 23;
-	uint8_t hash[TEE_FS_HTREE_HASH_SIZE] = { 0 };
+	uint8_t hash[TEE_FS_HTREE_HASH_SIZE];
+	const TEE_UUID *uuid;
+	struct tee_ta_session *sess;
 
 	assert((w_unsync_begin + w_unsync_num) <= num_blocks);
+
+	res = tee_ta_get_current_session(&sess);
+	if (res)
+		return res;
+	uuid = &sess->ctx->uuid;
 
 	aux->data_len = 0;
 	memset(aux->data, 0xce, aux->data_alloced);
@@ -403,9 +407,9 @@ static void aux_free(struct test_aux *aux)
 
 static struct test_aux *aux_alloc(size_t num_blocks)
 {
-	struct test_aux *aux = NULL;
-	size_t o = 0;
-	size_t sz = 0;
+	struct test_aux *aux;
+	size_t o;
+	size_t sz;
 
 	if (test_get_offs_size(TEE_FS_HTREE_TYPE_BLOCK, num_blocks, 1, &o, &sz))
 		return NULL;
@@ -433,10 +437,10 @@ err:
 static TEE_Result test_write_read(size_t num_blocks)
 {
 	struct test_aux *aux = aux_alloc(num_blocks);
-	TEE_Result res = TEE_SUCCESS;
-	size_t n = 0;
-	size_t m = 0;
-	size_t o = 0;
+	TEE_Result res;
+	size_t n;
+	size_t m;
+	size_t o;
 
 	if (!aux)
 		return TEE_ERROR_OUT_OF_MEMORY;
@@ -467,13 +471,13 @@ static TEE_Result test_corrupt_type(const TEE_UUID *uuid, uint8_t *hash,
 				    size_t num_blocks, struct test_aux *aux,
 				    enum tee_fs_htree_type type, size_t idx)
 {
-	TEE_Result res = TEE_SUCCESS;
+	TEE_Result res;
 	struct test_aux aux2 = *aux;
 	struct tee_fs_htree *ht = NULL;
-	size_t offs = 0;
-	size_t size = 0;
-	size_t size0 = 0;
-	size_t n = 0;
+	size_t offs;
+	size_t size;
+	size_t size0;
+	size_t n;
 
 	res = test_get_offs_size(type, idx, 0, &offs, &size0);
 	CHECK_RES(res, return res);
@@ -554,13 +558,18 @@ out:
 
 static TEE_Result test_corrupt(size_t num_blocks)
 {
-	struct ts_session *sess = ts_get_current_session();
-	const TEE_UUID *uuid = &sess->ctx->uuid;
-	TEE_Result res = TEE_SUCCESS;
+	TEE_Result res;
 	struct tee_fs_htree *ht = NULL;
-	uint8_t hash[TEE_FS_HTREE_HASH_SIZE] = { 0 };
-	struct test_aux *aux = NULL;
-	size_t n = 0;
+	struct tee_ta_session *sess;
+	uint8_t hash[TEE_FS_HTREE_HASH_SIZE];
+	const TEE_UUID *uuid;
+	struct test_aux *aux;
+	size_t n;
+
+	res = tee_ta_get_current_session(&sess);
+	if (res)
+		return res;
+	uuid = &sess->ctx->uuid;
 
 	aux = aux_alloc(num_blocks);
 	if (!aux) {
@@ -610,7 +619,7 @@ out:
 TEE_Result core_fs_htree_tests(uint32_t nParamTypes,
 			       TEE_Param pParams[TEE_NUM_PARAMS] __unused)
 {
-	TEE_Result res = TEE_SUCCESS;
+	TEE_Result res;
 
 	if (nParamTypes)
 		return TEE_ERROR_BAD_PARAMETERS;

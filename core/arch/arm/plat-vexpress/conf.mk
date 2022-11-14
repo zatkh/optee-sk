@@ -12,17 +12,10 @@ include core/arch/arm/cpu/cortex-armv8-0.mk
 platform-debugger-arm := 1
 # Workaround 808870: Unconditional VLDM instructions might cause an
 # alignment fault even though the address is aligned
-# Either hard float must be disabled for AArch32 or strict alignment checks
-# must be disabled
-ifeq ($(CFG_SCTLR_ALIGNMENT_CHECK),y)
 $(call force,CFG_TA_ARM32_NO_HARD_FLOAT_SUPPORT,y)
-else
-$(call force,CFG_SCTLR_ALIGNMENT_CHECK,n)
 endif
-endif #juno
 ifeq ($(PLATFORM_FLAVOR),qemu_armv8a)
 include core/arch/arm/cpu/cortex-armv8-0.mk
-CFG_ARM64_core ?= y
 endif
 
 
@@ -36,8 +29,10 @@ ifeq ($(platform-flavor-armv8),1)
 $(call force,CFG_WITH_ARM_TRUSTED_FW,y)
 endif
 
+$(call force,CFG_GENERIC_BOOT,y)
 $(call force,CFG_GIC,y)
 $(call force,CFG_PL011,y)
+$(call force,CFG_PM_STUBS,y)
 $(call force,CFG_SECURE_TIME_SOURCE_CNTPCT,y)
 
 ifeq ($(CFG_CORE_TPM_EVENT_LOG),y)
@@ -48,22 +43,19 @@ CFG_TPM_LOG_BASE_ADDR ?= 0x402c951
 CFG_TPM_MAX_LOG_SIZE ?= 0x200
 endif
 
-ifneq ($(CFG_ARM64_core),y)
+ifeq ($(CFG_ARM64_core),y)
+$(call force,CFG_WITH_LPAE,y)
+else
 $(call force,CFG_ARM32_core,y)
 endif
 
+CFG_WITH_STACK_CANARIES ?= y
 CFG_WITH_STATS ?= y
-CFG_ENABLE_EMBEDDED_TESTS ?= y
 
 ifeq ($(PLATFORM_FLAVOR),fvp)
 CFG_TEE_CORE_NB_CORE = 8
-ifeq ($(CFG_CORE_SEL2_SPMC),y)
-CFG_TZDRAM_START ?= 0x06281000
-CFG_TZDRAM_SIZE  ?= 0x01D80000
-else
 CFG_TZDRAM_START ?= 0x06000000
 CFG_TZDRAM_SIZE  ?= 0x02000000
-endif
 CFG_SHMEM_START  ?= 0x83000000
 CFG_SHMEM_SIZE   ?= 0x00200000
 # DRAM1 is defined above 4G
@@ -81,8 +73,6 @@ CFG_SHMEM_SIZE   ?= 0x00200000
 $(call force,CFG_CORE_LARGE_PHYS_ADDR,y)
 $(call force,CFG_CORE_ARM64_PA_BITS,36)
 CFG_CRYPTO_WITH_CE ?= y
-CFG_ARM_SMCCC_TRNG ?= y
-CFG_WITH_SOFTWARE_PRNG ?= n
 endif
 
 ifeq ($(PLATFORM_FLAVOR),qemu_virt)
@@ -108,8 +98,6 @@ $(call force,CFG_BOOT_SECONDARY_REQUEST,y)
 $(call force,CFG_PSCI_ARM32,y)
 $(call force,CFG_DT,y)
 CFG_DTB_MAX_SIZE ?= 0x100000
-CFG_CORE_ASYNC_NOTIF ?= y
-CFG_CORE_ASYNC_NOTIF_GIC_INTID ?= 219
 endif
 
 ifeq ($(PLATFORM_FLAVOR),qemu_armv8a)
@@ -125,11 +113,4 @@ CFG_SHMEM_SIZE  ?= 0x00200000
 CFG_TEE_SDP_MEM_SIZE ?= 0x00400000
 $(call force,CFG_DT,y)
 CFG_DTB_MAX_SIZE ?= 0x100000
-endif
-
-ifneq (,$(filter $(PLATFORM_FLAVOR),qemu_virt qemu_armv8a))
-CFG_DT_DRIVER_EMBEDDED_TEST ?= y
-ifeq ($(CFG_DT_DRIVER_EMBEDDED_TEST),y)
-$(call force,CFG_EMBED_DTB_SOURCE_FILE,embedded_dtb_test.dts,Mandated for DT tests)
-endif
 endif

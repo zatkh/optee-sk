@@ -139,8 +139,7 @@ void tzc_region_enable(uint8_t region)
 void tzc_fail_dump(void)
 {
 	vaddr_t base __maybe_unused = core_mmu_get_va(tzc.base,
-						      MEM_AREA_IO_SEC,
-						      TZC400_REG_SIZE);
+						      MEM_AREA_IO_SEC);
 
 	EMSG("Fail address Low 0x%" PRIx32,
 	     io_read32(base + FAIL_ADDRESS_LOW_OFF));
@@ -152,8 +151,7 @@ void tzc_fail_dump(void)
 
 void tzc_int_clear(void)
 {
-	vaddr_t base = core_mmu_get_va(tzc.base, MEM_AREA_IO_SEC,
-				       TZC400_REG_SIZE);
+	vaddr_t base = core_mmu_get_va(tzc.base, MEM_AREA_IO_SEC);
 
 	io_write32(base + INT_CLEAR, 0);
 }
@@ -255,7 +253,7 @@ int tzc_auto_configure(vaddr_t addr, vaddr_t size, uint32_t attr,
 			lregion++;
 			address += region_size;
 			lsize -= region_size;
-			pow = tzc.addr_width;
+			pow--;
 			continue;
 		}
 
@@ -280,7 +278,7 @@ int tzc_auto_configure(vaddr_t addr, vaddr_t size, uint32_t attr,
 					     TZC_ATTR_REGION_EN_MASK |
 					     mask | attr);
 			lregion++;
-			pow = tzc.addr_width;
+			pow--;
 			continue;
 		}
 		pow--;
@@ -300,7 +298,7 @@ TEE_Result tzc_regions_lockdown(void)
 	uint32_t val = 0;
 	uint32_t check = 0;
 
-	val = LOCKDOWN_RANGE_ENABLE | (tzc.num_regions - 1);
+	val = LOCKDOWN_RANGE_ENABLE | tzc.num_regions;
 	io_write32(tzc.base + LOCKDOWN_RANGE_OFF, val);
 	check = io_read32(tzc.base + LOCKDOWN_RANGE_OFF);
 	if (check != val)

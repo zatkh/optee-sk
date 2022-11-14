@@ -31,10 +31,4 @@ static inline TEE_Result core_lockdep_tests(
 }
 #endif
 
-TEE_Result core_aes_perf_tests(uint32_t param_types,
-			       TEE_Param params[TEE_NUM_PARAMS]);
-
-TEE_Result core_dt_driver_tests(uint32_t param_types,
-				TEE_Param params[TEE_NUM_PARAMS]);
-
 #endif /*CORE_PTA_TESTS_MISC_H*/

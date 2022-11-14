@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -9,7 +16,7 @@
 
 #ifdef LTC_DER
 
-static int s_new_element(ltc_asn1_list **l)
+static int _new_element(ltc_asn1_list **l)
 {
    /* alloc new link */
    if (*l == NULL) {
@@ -33,12 +40,11 @@ static int s_new_element(ltc_asn1_list **l)
    @param in      The input buffer
    @param inlen   [in/out] The length of the input buffer and on output the amount of decoded data
    @param out     [out] A pointer to the linked list
-   @param depth   The depth/level of decoding recursion we've already reached
    @return CRYPT_OK on success.
 */
-static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *inlen, ltc_asn1_list **out, unsigned long depth)
+int der_decode_sequence_flexi(const unsigned char *in, unsigned long *inlen, ltc_asn1_list **out)
 {
-   ltc_asn1_list *l;
+   ltc_asn1_list *l, *t;
    unsigned long err, identifier, len, totlen, data_offset, id_len, len_len;
    void          *realloc_tmp;
 
@@ -51,7 +57,7 @@ static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *i
 
    if (*inlen == 0) {
       /* alloc new link */
-      if ((err = s_new_element(&l)) != CRYPT_OK) {
+      if ((err = _new_element(&l)) != CRYPT_OK) {
          goto error;
       }
    }
@@ -59,7 +65,7 @@ static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *i
    /* scan the input and and get lengths and what not */
    while (*inlen) {
       /* alloc new link */
-      if ((err = s_new_element(&l)) != CRYPT_OK) {
+      if ((err = _new_element(&l)) != CRYPT_OK) {
          goto error;
       }
 
@@ -423,12 +429,6 @@ static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *i
                }
              }
 
-             /* check that we don't go over the recursion limit */
-             if (depth > LTC_DER_MAX_RECURSION) {
-                err = CRYPT_PK_ASN1_ERROR;
-                goto error;
-             }
-
              if ((l->data = XMALLOC(len)) == NULL) {
                 err = CRYPT_MEM;
                 goto error;
@@ -447,7 +447,7 @@ static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *i
              len_len = len;
 
              /* Sequence elements go as child */
-             if ((err = s_der_decode_sequence_flexi(in, &len, &(l->child), depth+1)) != CRYPT_OK) {
+             if ((err = der_decode_sequence_flexi(in, &len, &(l->child))) != CRYPT_OK) {
                 goto error;
              }
              if (len_len != len) {
@@ -462,6 +462,17 @@ static int s_der_decode_sequence_flexi(const unsigned char *in, unsigned long *i
              if (l->child) {
                 /* link them up y0 */
                 l->child->parent = l;
+             }
+
+             t = l;
+             len_len = 0;
+             while((t != NULL) && (t->child != NULL)) {
+                len_len++;
+                t = t->child;
+             }
+             if (len_len > LTC_DER_MAX_RECURSION) {
+                err = CRYPT_PK_ASN1_ERROR;
+                goto error;
              }
 
              break;
@@ -525,17 +536,9 @@ error:
    return err;
 }
 
-/**
-   ASN.1 DER Flexi(ble) decoder will decode arbitrary DER packets and create a linked list of the decoded elements.
-   @param in      The input buffer
-   @param inlen   [in/out] The length of the input buffer and on output the amount of decoded data
-   @param out     [out] A pointer to the linked list
-   @return CRYPT_OK on success.
-*/
-int der_decode_sequence_flexi(const unsigned char *in, unsigned long *inlen, ltc_asn1_list **out)
-{
-   return s_der_decode_sequence_flexi(in, inlen, out, 0);
-}
-
 #endif
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

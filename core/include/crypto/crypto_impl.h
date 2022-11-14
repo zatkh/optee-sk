@@ -1,13 +1,11 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2019, Linaro Limited
- * Copyright (c) 2021, SumUp Services GmbH
  */
 
 #ifndef __CRYPTO_CRYPTO_IMPL_H
 #define __CRYPTO_CRYPTO_IMPL_H
 
-#include <crypto/crypto.h>
 #include <tee_api_types.h>
 
 /*
@@ -136,10 +134,8 @@ CRYPTO_ALLOC_CTX_NOT_IMPLEMENTED(des3_cbc_mac_pkcs5, mac)
 
 #if defined(CFG_CRYPTO_CMAC)
 TEE_Result crypto_aes_cmac_alloc_ctx(struct crypto_mac_ctx **ctx);
-TEE_Result crypto_des3_cmac_alloc_ctx(struct crypto_mac_ctx **ctx);
 #else
 CRYPTO_ALLOC_CTX_NOT_IMPLEMENTED(aes_cmac, mac)
-CRYPTO_ALLOC_CTX_NOT_IMPLEMENTED(des3_cmac, mac)
 #endif
 
 /*
@@ -276,177 +272,5 @@ drvcrypt_hash_alloc_ctx(struct crypto_hash_ctx **ctx __unused,
 {
 	return TEE_ERROR_NOT_IMPLEMENTED;
 }
-#endif /* CFG_CRYPTO_DRV_HASH */
-
-#ifdef CFG_CRYPTO_DRV_CIPHER
-TEE_Result drvcrypt_cipher_alloc_ctx(struct crypto_cipher_ctx **ctx,
-				     uint32_t algo);
-#else
-static inline TEE_Result
-drvcrypt_cipher_alloc_ctx(struct crypto_cipher_ctx **ctx __unused,
-			  uint32_t algo __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-#endif /* CFG_CRYPTO_DRV_CIPHER */
-
-#ifdef CFG_CRYPTO_DRV_MAC
-/* Cryptographic MAC driver context allocation */
-TEE_Result drvcrypt_mac_alloc_ctx(struct crypto_mac_ctx **ctx, uint32_t algo);
-#else
-static inline TEE_Result
-drvcrypt_mac_alloc_ctx(struct crypto_mac_ctx **ctx __unused,
-		       uint32_t algo __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-#endif /* CFG_CRYPTO_DRV_MAC */
-
-#ifdef CFG_CRYPTO_DRV_AUTHENC
-/* Cryptographic Authenticated Encryption driver context allocation */
-TEE_Result drvcrypt_authenc_alloc_ctx(struct crypto_authenc_ctx **ctx,
-				      uint32_t algo);
-#else
-static inline TEE_Result
-drvcrypt_authenc_alloc_ctx(struct crypto_authenc_ctx **ctx __unused,
-			   uint32_t algo __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-#endif /* CFG_CRYPTO_DRV_AUTHENC */
-/*
- * The ECC public key operations used by the crypto_acipher_ecc_*() and
- * crypto_acipher_free_ecc_*() functions.
- * Reference set in ecc_public_key when key allocated.
- *
- * @free    is mandatory
- * @verify  is optional
- * @encrypt is optional
- */
-struct crypto_ecc_public_ops {
-	void (*free)(struct ecc_public_key *key);
-	TEE_Result (*verify)(uint32_t algo, struct ecc_public_key *key,
-			     const uint8_t *msg, size_t msg_len,
-			     const uint8_t *sig, size_t sig_len);
-	TEE_Result (*encrypt)(struct ecc_public_key *key, const uint8_t *src,
-			      size_t src_len, uint8_t *dst, size_t *dst_len);
-};
-
-/*
- * The ECC keypair operations used by the crypto_acipher_ecc_*() and
- * crypto_acipher_gen_ecc_*() functions.
- * Reference set in ecc_keypair when key allocated.
- *
- * @generate      is mandatory
- * @sign          is optional
- * @shared_secret is optional
- * @decrypt       is optional
- */
-struct crypto_ecc_keypair_ops {
-	TEE_Result (*generate)(struct ecc_keypair *key, size_t key_size_bits);
-	TEE_Result (*sign)(uint32_t algo, struct ecc_keypair *key,
-			   const uint8_t *msg, size_t msg_len, uint8_t *sig,
-			   size_t *sig_len);
-	TEE_Result (*shared_secret)(struct ecc_keypair *private_key,
-				    struct ecc_public_key *public_key,
-				    void *secret, unsigned long *secret_len);
-	TEE_Result (*decrypt)(struct ecc_keypair *key, const uint8_t *src,
-			      size_t src_len, uint8_t *dst, size_t *dst_len);
-};
-
-#ifdef CFG_CRYPTO_ECC
-TEE_Result crypto_asym_alloc_ecc_public_key(struct ecc_public_key *key,
-					    uint32_t key_type,
-					    size_t key_size_bits);
-TEE_Result crypto_asym_alloc_ecc_keypair(struct ecc_keypair *key,
-					 uint32_t key_type,
-					 size_t key_size_bits);
-#else
-static inline TEE_Result
-crypto_asym_alloc_ecc_public_key(struct ecc_public_key *key __unused,
-				 uint32_t key_type __unused,
-				 size_t key_size_bits __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-
-static inline TEE_Result
-crypto_asym_alloc_ecc_keypair(struct ecc_keypair *key __unused,
-			      uint32_t key_type __unused,
-			      size_t key_size_bits __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-#endif /* CFG_CRYPTO_ECC */
-
-#ifdef CFG_CRYPTO_DRV_ECC
-TEE_Result drvcrypt_asym_alloc_ecc_public_key(struct ecc_public_key *key,
-					      uint32_t key_type,
-					      size_t key_size_bits);
-TEE_Result drvcrypt_asym_alloc_ecc_keypair(struct ecc_keypair *key,
-					   uint32_t key_type,
-					   size_t key_size_bits);
-#else
-static inline TEE_Result
-drvcrypt_asym_alloc_ecc_public_key(struct ecc_public_key *key __unused,
-				   uint32_t key_type __unused,
-				   size_t key_size_bits __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-
-static inline TEE_Result
-drvcrypt_asym_alloc_ecc_keypair(struct ecc_keypair *key __unused,
-				uint32_t key_type __unused,
-				size_t key_size_bits __unused)
-{
-	return TEE_ERROR_NOT_IMPLEMENTED;
-}
-#endif /* CFG_CRYPTO_DRV_ECC */
-
-TEE_Result sw_crypto_acipher_alloc_rsa_keypair(struct rsa_keypair *s,
-					       size_t key_size_bits);
-
-TEE_Result sw_crypto_acipher_alloc_rsa_public_key(struct rsa_public_key *s,
-						  size_t key_size_bits);
-
-void sw_crypto_acipher_free_rsa_public_key(struct rsa_public_key *s);
-
-void sw_crypto_acipher_free_rsa_keypair(struct rsa_keypair *s);
-
-TEE_Result sw_crypto_acipher_gen_rsa_key(struct rsa_keypair *key,
-					 size_t key_size);
-
-TEE_Result sw_crypto_acipher_rsanopad_decrypt(struct rsa_keypair *key,
-					      const uint8_t *src,
-					      size_t src_len, uint8_t *dst,
-					      size_t *dst_len);
-TEE_Result sw_crypto_acipher_rsanopad_encrypt(struct rsa_public_key *key,
-					      const uint8_t *src,
-					      size_t src_len, uint8_t *dst,
-					      size_t *dst_len);
-TEE_Result sw_crypto_acipher_rsaes_decrypt(uint32_t algo,
-					   struct rsa_keypair *key,
-					   const uint8_t *label,
-					   size_t label_len, const uint8_t *src,
-					   size_t src_len, uint8_t *dst,
-					   size_t *dst_len);
-
-TEE_Result sw_crypto_acipher_rsaes_encrypt(uint32_t algo,
-					   struct rsa_public_key *key,
-					   const uint8_t *label,
-					   size_t label_len, const uint8_t *src,
-					   size_t src_len, uint8_t *dst,
-					   size_t *dst_len);
-
-TEE_Result sw_crypto_acipher_rsassa_sign(uint32_t algo, struct rsa_keypair *key,
-					 int salt_len, const uint8_t *msg,
-					 size_t msg_len, uint8_t *sig,
-					 size_t *sig_len);
-
-TEE_Result sw_crypto_acipher_rsassa_verify(uint32_t algo,
-					   struct rsa_public_key *key,
-					   int salt_len, const uint8_t *msg,
-					   size_t msg_len, const uint8_t *sig,
-					   size_t sig_len);
+#endif
 #endif /*__CRYPTO_CRYPTO_IMPL_H*/

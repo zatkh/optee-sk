@@ -7,6 +7,6 @@
 
 #include <stdint.h>
 
-TEE_Result hw_get_random_bytes(void *buf, size_t blen);
+uint8_t hw_get_random_byte(void);
 
 #endif /* __RNG_SUPPORT_H__ */

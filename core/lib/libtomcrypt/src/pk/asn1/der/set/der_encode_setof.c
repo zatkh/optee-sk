@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -14,7 +21,7 @@ struct edge {
    unsigned long  size;
 };
 
-static int s_qsort_helper(const void *a, const void *b)
+static int _qsort_helper(const void *a, const void *b)
 {
    struct edge   *A = (struct edge *)a, *B = (struct edge *)b;
    int            r;
@@ -126,7 +133,7 @@ int der_encode_setof(const ltc_asn1_list *list, unsigned long inlen,
    }
 
    /* sort based on contents (using edges) */
-   XQSORT(edges, inlen, sizeof(*edges), &s_qsort_helper);
+   XQSORT(edges, inlen, sizeof(*edges), &_qsort_helper);
 
    /* copy static header */
    XMEMCPY(out, buf, hdrlen);
@@ -149,3 +156,7 @@ int der_encode_setof(const ltc_asn1_list *list, unsigned long inlen,
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

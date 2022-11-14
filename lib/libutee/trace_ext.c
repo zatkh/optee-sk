@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
- * Copyright (c) 2020, Arm Limited
  */
 
 #include <stdio.h>
@@ -12,19 +11,11 @@
 #include <util.h>
 #include <utee_syscalls.h>
 
-#ifdef __LDELF__
-#include <ldelf_syscalls.h>
-#endif
-
 #if TRACE_LEVEL > 0
 
 void trace_ext_puts(const char *str)
 {
-#ifdef __LDELF__
-	_ldelf_log(str, strlen(str));
-#else
-	_utee_log(str, strlen(str));
-#endif
+	utee_log(str, strlen(str));
 }
 
 int trace_ext_get_thread_id(void)
@@ -82,10 +73,6 @@ int putchar(int c)
 }
 
 #else
-
-void trace_ext_puts(const char *str __unused)
-{
-}
 
 int printf(const char *fmt __unused, ...)
 {

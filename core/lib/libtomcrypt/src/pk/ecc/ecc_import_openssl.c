@@ -1,11 +1,18 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
 #ifdef LTC_MECC
 
-static int s_ecc_import_private_with_oid(const unsigned char *in, unsigned long inlen, ecc_key *key)
+static int _ecc_import_private_with_oid(const unsigned char *in, unsigned long inlen, ecc_key *key)
 {
    ltc_asn1_list seq_priv[4], custom[2];
    unsigned char bin_xy[2*ECC_MAXSIZE+2], bin_k[ECC_MAXSIZE];
@@ -39,7 +46,7 @@ error:
    return err;
 }
 
-static int s_ecc_import_private_with_curve(const unsigned char *in, unsigned long inlen, ecc_key *key)
+static int _ecc_import_private_with_curve(const unsigned char *in, unsigned long inlen, ecc_key *key)
 {
    void *prime, *order, *a, *b, *gx, *gy;
    ltc_asn1_list seq_fieldid[2], seq_curve[3], seq_ecparams[6], seq_priv[4], custom[2];
@@ -49,7 +56,7 @@ static int s_ecc_import_private_with_curve(const unsigned char *in, unsigned lon
    unsigned long cofactor = 0, ecver = 0, pkver = 0, tmpoid[16];
    int err;
 
-   if ((err = mp_init_multi(&prime, &order, &a, &b, &gx, &gy, LTC_NULL)) != CRYPT_OK) {
+   if ((err = mp_init_multi(&prime, &order, &a, &b, &gx, &gy, NULL)) != CRYPT_OK) {
       return err;
    }
 
@@ -95,7 +102,7 @@ static int s_ecc_import_private_with_curve(const unsigned char *in, unsigned lon
       err = ecc_set_key(bin_k, len_k, PK_PRIVATE, key);
    }
 error:
-   mp_clear_multi(prime, order, a, b, gx, gy, LTC_NULL);
+   mp_clear_multi(prime, order, a, b, gx, gy, NULL);
    return err;
 }
 
@@ -107,14 +114,18 @@ int ecc_import_openssl(const unsigned char *in, unsigned long inlen, ecc_key *ke
       goto success;
    }
 
-   if ((err = s_ecc_import_private_with_oid(in, inlen, key)) == CRYPT_OK) {
+   if ((err = _ecc_import_private_with_oid(in, inlen, key)) == CRYPT_OK) {
       goto success;
    }
 
-   err = s_ecc_import_private_with_curve(in, inlen, key);
+   err = _ecc_import_private_with_curve(in, inlen, key);
 
 success:
    return err;
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

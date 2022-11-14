@@ -4,7 +4,6 @@
  */
 
 #include <assert.h>
-#include <config.h>
 #include <kernel/lockdep.h>
 #include <kernel/unwind.h>
 #include <stdlib.h>
@@ -65,9 +64,6 @@ static vaddr_t *dup_call_stack(vaddr_t *stack)
 static void lockdep_print_call_stack(vaddr_t *stack)
 {
 	vaddr_t *p = NULL;
-
-	if (!IS_ENABLED(CFG_LOCKDEP_RECORD_STACK))
-		return;
 
 	EMSG_RAW("Call stack:");
 	for (p = stack; p && *p; p++)
@@ -146,12 +142,13 @@ static uintptr_t *lockdep_graph_get_shortest_cycle(struct lockdep_node *node)
 	TAILQ_INSERT_TAIL(&queue, qe, link);
 
 	while (!TAILQ_EMPTY(&queue)) {
-		struct lockdep_node *n = NULL;
-		struct lockdep_edge *e = NULL;
-
 		qe = TAILQ_FIRST(&queue);
-		n = qe->node;
+
+		struct lockdep_node *n = qe->node;
+
 		TAILQ_REMOVE(&queue, qe, link);
+
+		struct lockdep_edge *e = NULL;
 
 		STAILQ_FOREACH(e, &n->edges, link) {
 			if (e->to->lock_id == node->lock_id) {
@@ -177,13 +174,12 @@ static uintptr_t *lockdep_graph_get_shortest_cycle(struct lockdep_node *node)
 			}
 
 			if (!(e->to->flags & LOCKDEP_NODE_BFS_VISITED)) {
-				size_t nlen = 0;
-				struct lockdep_bfs *nqe = NULL;
-
 				e->to->flags |= LOCKDEP_NODE_BFS_VISITED;
 
-				nlen = qe->pathlen + 1;
-				nqe = calloc(1, sizeof(*nqe));
+				size_t nlen = qe->pathlen + 1;
+				struct lockdep_bfs *nqe = calloc(1,
+								 sizeof(*nqe));
+
 				if (!nqe)
 					goto out;
 				nqe->node = e->to;
@@ -210,8 +206,6 @@ out:
 
 static TEE_Result lockdep_visit(struct lockdep_node *node)
 {
-	struct lockdep_edge *e = NULL;
-
 	if (node->flags & LOCKDEP_NODE_PERM_MARK)
 		return TEE_SUCCESS;
 
@@ -219,6 +213,8 @@ static TEE_Result lockdep_visit(struct lockdep_node *node)
 		return TEE_ERROR_BAD_STATE;	/* Not a DAG! */
 
 	node->flags |= LOCKDEP_NODE_TEMP_MARK;
+
+	struct lockdep_edge *e;
 
 	STAILQ_FOREACH(e, &node->edges, link) {
 		TEE_Result res = lockdep_visit(e->to);
@@ -269,19 +265,12 @@ static void lockdep_print_edge_info(uintptr_t from __maybe_unused,
 				    struct lockdep_edge *edge)
 {
 	uintptr_t __maybe_unused to = edge->to->lock_id;
-	const char __maybe_unused *at_msg = "";
-	const char __maybe_unused *acq_msg = "";
 
-	if (IS_ENABLED(CFG_LOCKDEP_RECORD_STACK)) {
-		at_msg = " at:";
-		acq_msg = " acquired at:";
-	}
-
-	EMSG_RAW("-> Thread %#" PRIxPTR " acquired lock %#" PRIxPTR "%s",
-		 edge->thread_id, to, at_msg);
+	EMSG_RAW("-> Thread %#" PRIxPTR " acquired lock %#" PRIxPTR " at:",
+		 edge->thread_id, to);
 	lockdep_print_call_stack(edge->call_stack_to);
-	EMSG_RAW("...while holding lock %#" PRIxPTR "%s",
-		 from, acq_msg);
+	EMSG_RAW("...while holding lock %#" PRIxPTR " acquired at:",
+		 from);
 	lockdep_print_call_stack(edge->call_stack_from);
 }
 
@@ -323,36 +312,30 @@ static void lockdep_print_cycle_info(struct lockdep_node_head *graph,
 	free(cycle);
 }
 
-static vaddr_t *lockdep_get_kernel_stack(void)
-{
-	if (IS_ENABLED(CFG_LOCKDEP_RECORD_STACK))
-		return unw_get_kernel_stack();
-
-	return NULL;
-}
-
 TEE_Result __lockdep_lock_acquire(struct lockdep_node_head *graph,
 				  struct lockdep_lock_head *owned,
 				  uintptr_t id)
 {
 	struct lockdep_node *node = lockdep_add_to_graph(graph, id);
-	struct lockdep_lock *lock = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	vaddr_t *acq_stack = NULL;
 
 	if (!node)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
-	acq_stack = lockdep_get_kernel_stack();
+	struct lockdep_lock *lock = NULL;
+	vaddr_t *acq_stack = unw_get_kernel_stack();
 
 	TAILQ_FOREACH(lock, owned, link) {
-		res = lockdep_add_edge(lock->node, node, lock->call_stack,
-				       acq_stack, (uintptr_t)owned);
+		TEE_Result res = lockdep_add_edge(lock->node, node,
+						  lock->call_stack,
+						  acq_stack,
+						  (uintptr_t)owned);
+
 		if (res)
 			return res;
 	}
 
-	res = lockdep_graph_sort(graph);
+	TEE_Result res = lockdep_graph_sort(graph);
+
 	if (res) {
 		EMSG_RAW("Potential deadlock detected!");
 		EMSG_RAW("When trying to acquire lock %#" PRIxPTR, id);
@@ -381,13 +364,12 @@ TEE_Result __lockdep_lock_tryacquire(struct lockdep_node_head *graph,
 				     uintptr_t id)
 {
 	struct lockdep_node *node = lockdep_add_to_graph(graph, id);
-	struct lockdep_lock *lock = NULL;
-	vaddr_t *acq_stack = NULL;
 
 	if (!node)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
-	acq_stack = lockdep_get_kernel_stack();
+	struct lockdep_lock *lock = NULL;
+	vaddr_t *acq_stack = unw_get_kernel_stack();
 
 	lock = calloc(1, sizeof(*lock));
 	if (!lock)

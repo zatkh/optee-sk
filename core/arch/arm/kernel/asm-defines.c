@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2016-2022, Linaro Limited
+ * Copyright (c) 2016, Linaro Limited
  */
 
 #include <gen-asm-defines.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/thread.h>
 #include <kernel/thread_private.h>
 #include <sm/pm.h>
@@ -23,13 +23,12 @@ DEFINES
 	DEFINE(SM_CTX_NSEC, offsetof(struct sm_ctx, nsec));
 	DEFINE(SM_CTX_SEC, offsetof(struct sm_ctx, sec));
 
+	DEFINE(THREAD_VECTOR_TABLE_FIQ_ENTRY,
+	       offsetof(struct thread_vector_table, fiq_entry));
+
 	DEFINE(THREAD_SVC_REG_R0, offsetof(struct thread_svc_regs, r0));
 	DEFINE(THREAD_SVC_REG_R5, offsetof(struct thread_svc_regs, r5));
 	DEFINE(THREAD_SVC_REG_R6, offsetof(struct thread_svc_regs, r6));
-
-	/* struct thread_ctx */
-	DEFINE(THREAD_CTX_STACK_VA_END, offsetof(struct thread_ctx,
-						 stack_va_end));
 
 	/* struct thread_ctx_regs */
 	DEFINE(THREAD_CTX_REGS_USR_SP,
@@ -58,10 +57,6 @@ DEFINES
 	DEFINE(THREAD_SVC_REG_ELR, offsetof(struct thread_svc_regs, elr));
 	DEFINE(THREAD_SVC_REG_SPSR, offsetof(struct thread_svc_regs, spsr));
 	DEFINE(THREAD_SVC_REG_SP_EL0, offsetof(struct thread_svc_regs, sp_el0));
-#ifdef CFG_TA_PAUTH
-	DEFINE(THREAD_SVC_REG_APIAKEY_HI, offsetof(struct thread_svc_regs,
-						   apiakey_hi));
-#endif
 	DEFINE(THREAD_SVC_REG_SIZE, sizeof(struct thread_svc_regs));
 
 	/* struct thread_abort_regs */
@@ -70,18 +65,10 @@ DEFINES
 	DEFINE(THREAD_ABT_REG_X30, offsetof(struct thread_abort_regs, x30));
 	DEFINE(THREAD_ABT_REG_SPSR, offsetof(struct thread_abort_regs, spsr));
 	DEFINE(THREAD_ABT_REGS_SIZE, sizeof(struct thread_abort_regs));
-#if defined(CFG_TA_PAUTH) || defined(CFG_CORE_PAUTH)
-	DEFINE(THREAD_ABT_REGS_APIAKEY_HI, offsetof(struct thread_abort_regs,
-						    apiakey_hi));
-#endif
 
 	/* struct thread_ctx */
 	DEFINE(THREAD_CTX_KERN_SP, offsetof(struct thread_ctx, kern_sp));
-	DEFINE(THREAD_CTX_STACK_VA_END, offsetof(struct thread_ctx,
-						 stack_va_end));
-#if defined(CFG_CORE_PAUTH)
-	DEFINE(THREAD_CTX_KEYS, offsetof(struct thread_ctx, keys));
-#endif
+	DEFINE(THREAD_CTX_SIZE, sizeof(struct thread_ctx));
 
 	/* struct thread_ctx_regs */
 	DEFINE(THREAD_CTX_REGS_SP, offsetof(struct thread_ctx_regs, sp));
@@ -90,12 +77,6 @@ DEFINES
 	DEFINE(THREAD_CTX_REGS_X2, offsetof(struct thread_ctx_regs, x[2]));
 	DEFINE(THREAD_CTX_REGS_X4, offsetof(struct thread_ctx_regs, x[4]));
 	DEFINE(THREAD_CTX_REGS_X19, offsetof(struct thread_ctx_regs, x[19]));
-	DEFINE(THREAD_CTX_REGS_TPIDR_EL0, offsetof(struct thread_ctx_regs,
-						   tpidr_el0));
-#if defined(CFG_TA_PAUTH) || defined(CFG_CORE_PAUTH)
-	DEFINE(THREAD_CTX_REGS_APIAKEY_HI, offsetof(struct thread_ctx_regs,
-						    apiakey_hi));
-#endif
 
 	/* struct thread_user_mode_rec */
 	DEFINE(THREAD_USER_MODE_REC_CTX_REGS_PTR,
@@ -109,24 +90,7 @@ DEFINES
 	/* struct thread_core_local */
 	DEFINE(THREAD_CORE_LOCAL_X0, offsetof(struct thread_core_local, x[0]));
 	DEFINE(THREAD_CORE_LOCAL_X2, offsetof(struct thread_core_local, x[2]));
-	DEFINE(THREAD_CORE_LOCAL_KCODE_OFFSET,
-	       offsetof(struct thread_core_local, kcode_offset));
-#ifdef CFG_CORE_WORKAROUND_SPECTRE_BP_SEC
-	DEFINE(THREAD_CORE_LOCAL_BHB_LOOP_COUNT,
-	       offsetof(struct thread_core_local, bhb_loop_count));
-#endif
-#if defined(CFG_CORE_PAUTH)
-	DEFINE(THREAD_CORE_LOCAL_KEYS,
-	       offsetof(struct thread_core_local, keys));
-#endif
 #endif /*ARM64*/
-
-	/* struct thread_ctx */
-	DEFINE(THREAD_CTX_SIZE, sizeof(struct thread_ctx));
-#ifdef CFG_CORE_FFA
-	DEFINE(THREAD_CTX_TSD_RPC_TARGET_INFO,
-	       offsetof(struct thread_ctx, tsd.rpc_target_info))
-#endif
 
 	/* struct thread_core_local */
 	DEFINE(THREAD_CORE_LOCAL_TMP_STACK_VA_END,
@@ -137,8 +101,6 @@ DEFINES
 		offsetof(struct thread_core_local, flags));
 	DEFINE(THREAD_CORE_LOCAL_ABT_STACK_VA_END,
 		offsetof(struct thread_core_local, abt_stack_va_end));
-
-	DEFINE(STACK_TMP_GUARD, STACK_CANARY_SIZE / 2 + STACK_TMP_OFFS);
 
 	/* struct core_mmu_config */
 	DEFINE(CORE_MMU_CONFIG_SIZE, sizeof(struct core_mmu_config));

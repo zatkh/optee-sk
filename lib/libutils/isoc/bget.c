@@ -517,7 +517,6 @@ struct bhead {
 
 struct bdhead {
     bufsize tsize;		      /* Total size, including overhead */
-    bufsize offs;		      /* Offset from allocated buffer */
     struct bhead bh;		      /* Common header */
 };
 #define BDH(p)	((struct bdhead *) (p))
@@ -576,43 +575,13 @@ struct bpoolset {
 
 #define ESent	((bufsize) (-(((1L << (sizeof(bufsize) * 8 - 2)) - 1) * 2) - 2))
 
-static bufsize buf_get_pos(struct bfhead *bf, bufsize align, bufsize hdr_size,
-                           bufsize size)
-{
-    unsigned long buf = 0;
-    bufsize pos = 0;
-
-    if (bf->bh.bsize < size)
-       return -1;
-
-    /*
-     * plus sizeof(struct bhead) and hdr_size since buf will follow just
-     * after a struct bhead and an eventual extra header.
-     */
-    buf = (unsigned long)bf + bf->bh.bsize - size + sizeof(struct bhead) +
-          hdr_size;
-    buf &= ~(align - 1);
-    pos = buf - (unsigned long)bf - sizeof(struct bhead) - hdr_size;
-
-    if (pos == 0) /* exact match */
-        return pos;
-    if (pos >= SizeQ + sizeof(struct bhead)) /* room for an empty buffer */
-        return pos;
-
-    return -1;
-}
-
 /*  BGET  --  Allocate a buffer.  */
 
-void *bget(requested_align, hdr_size, requested_size, poolset)
-  bufsize requested_align;
-  bufsize hdr_size;
+void *bget(requested_size, poolset)
   bufsize requested_size;
   struct bpoolset *poolset;
 {
-    bufsize align = requested_align;
     bufsize size = requested_size;
-    bufsize pos;
     struct bfhead *b;
 #ifdef BestFit
     struct bfhead *best;
@@ -623,18 +592,10 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 #endif
 
     assert(size > 0);
-    COMPILE_TIME_ASSERT(BGET_HDR_QUANTUM == SizeQ);
-
-    if (align < 0 || (align > 0 && !IS_POWER_OF_TWO((unsigned long)align)))
-        return NULL;
-    if (hdr_size % BGET_HDR_QUANTUM != 0)
-        return NULL;
 
     if (size < SizeQ) { 	      /* Need at least room for the */
 	size = SizeQ;		      /*    queue links.  */
     }
-    if (align < SizeQ)
-        align = SizeQ;
 #ifdef SizeQuant
 #if SizeQuant > 1
     if (ADD_OVERFLOW(size, SizeQuant - 1, &size))
@@ -646,8 +607,6 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 
     /* Add overhead in allocated buffer to size required. */
     if (ADD_OVERFLOW(size, sizeof(struct bhead), &size))
-        return NULL;
-    if (ADD_OVERFLOW(size, hdr_size, &size))
         return NULL;
 
 #ifdef BECtl
@@ -668,9 +627,7 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 
 #ifdef BestFit
 	while (b != &poolset->freelist) {
-            assert(b->bh.prevfree == 0);
-            pos = buf_get_pos(b, align, hdr_size, size);
-            if (pos >= 0) {
+	    if (b->bh.bsize >= size) {
 		if ((best == &poolset->freelist) ||
 		    (b->bh.bsize < best->bh.bsize)) {
 		    best = b;
@@ -682,78 +639,69 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 #endif /* BestFit */
 
 	while (b != &poolset->freelist) {
-            pos = buf_get_pos(b, align, hdr_size, size);
-            if (pos >= 0) {
-                struct bhead *b_alloc = BH((char *)b + pos);
-                struct bhead *b_next = BH((char *)b + b->bh.bsize);
+	    if ((bufsize) b->bh.bsize >= size) {
 
-                assert(b_next->prevfree == b->bh.bsize);
+		/* Buffer  is big enough to satisfy  the request.  Allocate it
+		   to the caller.  We must decide whether the buffer is  large
+		   enough  to  split  into  the part given to the caller and a
+		   free buffer that remains on the free list, or  whether  the
+		   entire  buffer  should  be  removed	from the free list and
+		   given to the caller in its entirety.   We  only  split  the
+		   buffer if enough room remains for a header plus the minimum
+		   quantum of allocation. */
 
-                /*
-                 * Zero the back pointer in the next buffer in memory
-                 * to indicate that this buffer is allocated.
-                 */
-                b_next->prevfree = 0;
+		if ((b->bh.bsize - size) > (SizeQ + (sizeof(struct bhead)))) {
+		    struct bhead *ba, *bn;
 
-                assert(b->ql.blink->ql.flink == b);
-                assert(b->ql.flink->ql.blink == b);
+		    ba = BH(((char *) b) + (b->bh.bsize - size));
+		    bn = BH(((char *) ba) + size);
+		    assert(bn->prevfree == b->bh.bsize);
+		    /* Subtract size from length of free block. */
+		    b->bh.bsize -= size;
+		    /* Link allocated buffer to the previous free buffer. */
+		    ba->prevfree = b->bh.bsize;
+		    /* Plug negative size into user buffer. */
+		    ba->bsize = -(bufsize) size;
+		    /* Mark buffer after this one not preceded by free block. */
+		    bn->prevfree = 0;
 
-                if (pos == 0) {
-                    /*
-                     * Need to allocate from the beginning of this free block.
-                     * Unlink the block and mark it as allocated.
-                     */
+#ifdef BufStats
+		    poolset->totalloc += size;
+		    poolset->numget++;		  /* Increment number of bget() calls */
+#endif
+		    buf = (void *) ((((char *) ba) + sizeof(struct bhead)));
+		    tag_asan_alloced(buf, size);
+		    return buf;
+		} else {
+		    struct bhead *ba;
+
+		    ba = BH(((char *) b) + b->bh.bsize);
+		    assert(ba->prevfree == b->bh.bsize);
+
+                    /* The buffer isn't big enough to split.  Give  the  whole
+		       shebang to the caller and remove it from the free list. */
+
+		    assert(b->ql.blink->ql.flink == b);
+		    assert(b->ql.flink->ql.blink == b);
 		    b->ql.blink->ql.flink = b->ql.flink;
 		    b->ql.flink->ql.blink = b->ql.blink;
 
-		    /* Negate size to mark buffer allocated. */
-		    b->bh.bsize = -b->bh.bsize;
-                } else {
-                    /*
-                     * Carve out the memory allocation from the end of this
-                     * free block. Negative size to mark buffer allocated.
-                     */
-                    b_alloc->bsize = -(b->bh.bsize - pos);
-                    b_alloc->prevfree = pos;
-                    b->bh.bsize = pos;
-                }
-
-                assert(b_alloc->bsize < 0);
-                /*
-                 * At this point is b_alloc pointing to the allocated
-                 * buffer and b_next at the buffer following. b might be a
-                 * free block or a used block now.
-                 */
-                if (-b_alloc->bsize - size > SizeQ + sizeof(struct bhead)) {
-                    /*
-                     * b_alloc has too much unused memory at the
-                     * end we need to split the block and register that
-                     * last part as free.
-                     */
-                    b = BFH((char *)b_alloc + size);
-                    b->bh.bsize = -b_alloc->bsize - size;
-                    b->bh.prevfree = 0;
-                    b_alloc->bsize += b->bh.bsize;
-
-                    assert(poolset->freelist.ql.blink->ql.flink ==
-			   &poolset->freelist);
-                    assert(poolset->freelist.ql.flink->ql.blink ==
-			   &poolset->freelist);
-                    b->ql.flink = &poolset->freelist;
-                    b->ql.blink = poolset->freelist.ql.blink;
-                    poolset->freelist.ql.blink = b;
-                    b->ql.blink->ql.flink = b;
-
-                    assert(BH((char *)b + b->bh.bsize) == b_next);
-                    b_next->prevfree = b->bh.bsize;
-                }
-
 #ifdef BufStats
-		poolset->totalloc -= b_alloc->bsize;
-		poolset->numget++;		  /* Increment number of bget() calls */
+		    poolset->totalloc += b->bh.bsize;
+		    poolset->numget++;		  /* Increment number of bget() calls */
 #endif
-                buf = (char *)b_alloc + sizeof(struct bhead);
-                return buf;
+		    /* Negate size to mark buffer allocated. */
+		    b->bh.bsize = -(b->bh.bsize);
+
+		    /* Zero the back pointer in the next buffer in memory
+		       to indicate that this buffer is allocated. */
+		    ba->prevfree = 0;
+
+		    /* Give user buffer starting at queue links. */
+		    buf =  (void *) &(b->ql);
+		    tag_asan_alloced(buf, size);
+		    return buf;
+		}
 	    }
 	    b = b->ql.flink;		  /* Link to next buffer */
 	}
@@ -774,43 +722,28 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
     /* Don't give up yet -- look in the reserve supply. */
 
     if (poolset->acqfcn != NULL) {
-	if (size > exp_incr - sizeof(struct bfhead) - align) {
+	if (size > exp_incr - sizeof(struct bhead)) {
 
 	    /* Request	is  too  large	to  fit in a single expansion
 	       block.  Try to satisy it by a direct buffer acquisition. */
-            char *p;
+
+	    struct bdhead *bdh;
 
 	    size += sizeof(struct bdhead) - sizeof(struct bhead);
-            if (align > QLSize)
-                size += align;
-	    p = poolset->acqfcn(size);
-            if (p != NULL) {
-	        struct bdhead *bdh;
-
-                if (align <= QLSize) {
-                    bdh = BDH(p);
-		    buf = bdh + 1;
-                } else {
-                    unsigned long tp = (unsigned long)p;
-
-                    tp += sizeof(*bdh) + hdr_size + align;
-                    tp &= ~(align - 1);
-                    tp -= hdr_size;
-		    buf = (void *)tp;
-                    bdh = BDH((char *)buf - sizeof(*bdh));
-                }
+	    if ((bdh = BDH((*acqfcn)((bufsize) size))) != NULL) {
 
 		/*  Mark the buffer special by setting the size field
 		    of its header to zero.  */
 		bdh->bh.bsize = 0;
 		bdh->bh.prevfree = 0;
 		bdh->tsize = size;
-		bdh->offs = (unsigned long)bdh - (unsigned long)p;
 #ifdef BufStats
 		poolset->totalloc += size;
 		poolset->numget++;	  /* Increment number of bget() calls */
 		poolset->numdget++;	  /* Direct bget() call count */
 #endif
+		buf =  (void *) (bdh + 1);
+		tag_asan_alloced(buf, size);
 		return buf;
 	    }
 
@@ -822,7 +755,7 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 
 	    if ((newpool = poolset->acqfcn((bufsize) exp_incr)) != NULL) {
 		bpool(newpool, exp_incr, poolset);
-                buf =  bget(align, hdr_size, requested_size, pool);  /* This can't, I say, can't
+                buf =  bget(requested_size, pool);  /* This can't, I say, can't
 						       get into a loop. */
 		return buf;
 	    }
@@ -840,13 +773,11 @@ void *bget(requested_align, hdr_size, requested_size, poolset)
 	       the  entire  contents  of  the buffer to zero, not just the
 	       region requested by the caller. */
 
-void *bgetz(align, hdr_size, size, poolset)
-  bufsize align;
-  bufsize hdr_size;
+void *bgetz(size, poolset)
   bufsize size;
   struct bpoolset *poolset;
 {
-    char *buf = (char *) bget(align, hdr_size, size, poolset);
+    char *buf = (char *) bget(size, poolset);
 
     if (buf != NULL) {
 	struct bhead *b;
@@ -858,7 +789,7 @@ void *bgetz(align, hdr_size, size, poolset)
 	    struct bdhead *bd;
 
 	    bd = BDH(buf - sizeof(struct bdhead));
-	    rsize = bd->tsize - sizeof(struct bdhead) - bd->offs;
+	    rsize = bd->tsize - sizeof(struct bdhead);
 	} else {
 	    rsize -= sizeof(struct bhead);
 	}
@@ -873,10 +804,8 @@ void *bgetz(align, hdr_size, size, poolset)
 	       enhanced to allow the buffer to grow into adjacent free
 	       blocks and to avoid moving data unnecessarily.  */
 
-void *bgetr(buf, align, hdr_size, size, poolset)
+void *bgetr(buf, size, poolset)
   void *buf;
-  bufsize align;
-  bufsize hdr_size;
   bufsize size;
   struct bpoolset *poolset;
 {
@@ -884,7 +813,7 @@ void *bgetr(buf, align, hdr_size, size, poolset)
     bufsize osize;		      /* Old size of buffer */
     struct bhead *b;
 
-    if ((nbuf = bget(align, hdr_size, size, poolset)) == NULL) { /* Acquire new buffer */
+    if ((nbuf = bget(size, poolset)) == NULL) { /* Acquire new buffer */
 	return NULL;
     }
     if (buf == NULL) {
@@ -898,17 +827,17 @@ void *bgetr(buf, align, hdr_size, size, poolset)
 	struct bdhead *bd;
 
 	bd = BDH(((char *) buf) - sizeof(struct bdhead));
-	osize = bd->tsize - sizeof(struct bdhead) - bd->offs;
+	osize = bd->tsize - sizeof(struct bdhead);
     } else
 #endif
 	osize -= sizeof(struct bhead);
     assert(osize > 0);
-    V memcpy_unchecked((char *) nbuf, (char *) buf, /* Copy the data */
+    V memcpy((char *) nbuf, (char *) buf, /* Copy the data */
 	     (MemSize) ((size < osize) ? size : osize));
 #ifndef __KERNEL__
     /* User space reallocations are always zeroed */
     if (size > osize)
-         V memset_unchecked((char *) nbuf + osize, 0, size - osize);
+         V memset((char *) nbuf + osize, 0, size - osize);
 #endif
     brel(buf, poolset, false /* !wipe */);
     return nbuf;
@@ -922,8 +851,7 @@ void brel(buf, poolset, wipe)
   int wipe;
 {
     struct bfhead *b, *bn;
-    char *wipe_start;
-    bufsize wipe_size;
+    bufsize bs;
 
     b = BFH(((char *) buf) - sizeof(struct bhead));
 #ifdef BufStats
@@ -950,8 +878,10 @@ void brel(buf, poolset, wipe)
 				   (MemSize) (bdh->tsize -
 					      sizeof(struct bdhead)));
 	}
+	bs = bdh->tsize - sizeof(struct bdhead);
 	assert(poolset->relfcn != NULL);
-	poolset->relfcn((char *)buf - sizeof(struct bdhead) - bdh->offs);      /* Release it directly. */
+	poolset->relfcn((void *) bdh);      /* Release it directly. */
+	tag_asan_free(buf, bs);
 	return;
     }
 #endif /* BECtl */
@@ -963,6 +893,7 @@ void brel(buf, poolset, wipe)
 	bn = NULL;
     }
     assert(b->bh.bsize < 0);
+    bs = -b->bh.bsize;
 
     /*	Back pointer in next buffer must be zero, indicating the
 	same thing: */
@@ -986,10 +917,6 @@ void brel(buf, poolset, wipe)
 
 	register bufsize size = b->bh.bsize;
 
-	/* Only wipe the current buffer, including bfhead. */
-	wipe_start = (char *)b;
-	wipe_size = -size;
-
         /* Make the previous buffer the one we're working on. */
 	assert(BH((char *) b - b->bh.prevfree)->bsize == b->bh.prevfree);
 	b = BFH(((char *) b) - b->bh.prevfree);
@@ -1006,9 +933,6 @@ void brel(buf, poolset, wipe)
 	poolset->freelist.ql.blink = b;
 	b->ql.blink->ql.flink = b;
 	b->bh.bsize = -b->bh.bsize;
-
-	wipe_start = (char *)b + sizeof(struct bfhead);
-	wipe_size = b->bh.bsize - sizeof(struct bfhead);
     }
 
     /* Now we look at the next buffer in memory, located by advancing from
@@ -1037,11 +961,10 @@ void brel(buf, poolset, wipe)
 	   memory.  */
 
 	bn = BFH(((char *) b) + b->bh.bsize);
-	/* Only bfhead of next buffer needs to be wiped */
-	wipe_size += sizeof(struct bfhead);
     }
     if (wipe) {
-	V memset_unchecked(wipe_start, 0x55, wipe_size);
+	V memset_unchecked(((char *) b) + sizeof(struct bfhead), 0x55,
+			   (MemSize) (b->bh.bsize - sizeof(struct bfhead)));
     }
     assert(bn->bh.bsize < 0);
 
@@ -1075,6 +998,7 @@ void brel(buf, poolset, wipe)
 #endif /* BufStats */
     }
 #endif /* BECtl */
+    tag_asan_free(buf, bs);
 }
 
 #ifdef BECtl
@@ -1374,9 +1298,17 @@ int bpoolv(buf)
 	*			*
         \***********************/
 
-#if !defined(__KERNEL__) && !defined(__LDELF__) && defined(CFG_TA_BGET_TEST)
+#ifdef TestProg
 
-#define TestProg 20000
+#define Repeatable  1		      /* Repeatable pseudorandom sequence */
+				      /* If Repeatable is not defined, a
+					 time-seeded pseudorandom sequence
+					 is generated, exercising BGET with
+					 a different pattern of calls on each
+					 run. */
+#define OUR_RAND		      /* Use our own built-in version of
+					 rand() to guarantee the test is
+					 100% repeatable. */
 
 #ifdef BECtl
 #define PoolSize    300000	      /* Test buffer pool size */
@@ -1389,28 +1321,25 @@ int bpoolv(buf)
 #define dumpAlloc   0		      /* Dump allocated buffers ? */
 #define dumpFree    0		      /* Dump free buffers ? */
 
+#ifndef Repeatable
+extern long time();
+#endif
+
+extern char *malloc();
+extern int free _((char *));
+
 static char *bchain = NULL;	      /* Our private buffer chain */
 static char *bp = NULL; 	      /* Our initial buffer pool */
 
-#ifdef UsingFloat
 #include <math.h>
-#endif
+
+#ifdef OUR_RAND
 
 static unsigned long int next = 1;
 
-static void *(*mymalloc)(size_t size);
-static void (*myfree)(void *ptr);
-
-static struct bpoolset mypoolset = {
-	.freelist = {
-		.bh = { 0, 0},
-		.ql = { &mypoolset.freelist, &mypoolset.freelist},
-	}
-};
-
 /* Return next random integer */
 
-static int myrand(void)
+int rand()
 {
 	next = next * 1103515245L + 12345;
 	return (unsigned int) (next / 65536L) % 32768L;
@@ -1418,33 +1347,31 @@ static int myrand(void)
 
 /* Set seed for random generator */
 
-static void mysrand(unsigned int seed)
+void srand(seed)
+  unsigned int seed;
 {
 	next = seed;
 }
+#endif
 
 /*  STATS  --  Edit statistics returned by bstats() or bstatse().  */
 
-static void stats(const char *when __maybe_unused,
-		  struct bpoolset *poolset __maybe_unused)
+static void stats(when)
+  char *when;
 {
-#ifdef BufStats
     bufsize cural, totfree, maxfree;
     long nget, nfree;
-#endif
 #ifdef BECtl
     bufsize pincr;
     long totblocks, npget, nprel, ndget, ndrel;
 #endif
 
-#ifdef BufStats
-    bstats(&cural, &totfree, &maxfree, &nget, &nfree, poolset);
+    bstats(&cural, &totfree, &maxfree, &nget, &nfree);
     V printf(
         "%s: %ld gets, %ld releases.  %ld in use, %ld free, largest = %ld\n",
 	when, nget, nfree, (long) cural, (long) totfree, (long) maxfree);
-#endif
 #ifdef BECtl
-    bstatse(&pincr, &totblocks, &npget, &nprel, &ndget, &ndrel, poolset);
+    bstatse(&pincr, &totblocks, &npget, &nprel, &ndget, &ndrel);
     V printf(
          "  Blocks: size = %ld, %ld (%ld bytes) in use, %ld gets, %ld frees\n",
 	 (long)pincr, totblocks, pincr * totblocks, npget, nprel);
@@ -1463,7 +1390,7 @@ static int bcompact(bsize, seq)
 {
 #ifdef CompactTries
     char *bc = bchain;
-    int i = myrand() & 0x3;
+    int i = rand() & 0x3;
 
 #ifdef COMPACTRACE
     V printf("Compaction requested.  %ld bytes needed, sequence %d.\n",
@@ -1516,7 +1443,7 @@ static void *bexpand(size)
     bstats(&cural, &totfree, &maxfree, &nget, &nfree);
 
     if (cural < PoolSize) {
-	np = (void *) mymalloc((unsigned) size);
+	np = (void *) malloc((unsigned) size);
     }
 #ifdef EXPTRACE
     V printf("Expand pool by %ld -- %s.\n", (long) size,
@@ -1539,7 +1466,7 @@ static void bshrink(buf)
 #ifdef EXPTRACE
     V printf("Shrink pool.\n");
 #endif
-    myfree((char *) buf);
+    free((char *) buf);
 }
 
 #endif /* BECtl */
@@ -1547,7 +1474,8 @@ static void bshrink(buf)
 /*  Restrict buffer requests to those large enough to contain our pointer and
     small enough for the CPU architecture.  */
 
-static bufsize blimit(bufsize bs)
+static bufsize blimit(bs)
+  bufsize bs;
 {
     if (bs < sizeof(char *)) {
 	bs = sizeof(char *);
@@ -1569,83 +1497,54 @@ static bufsize blimit(bufsize bs)
     return bs;
 }
 
-int bget_main_test(void *(*malloc_func)(size_t), void (*free_func)(void *))
+int main()
 {
     int i;
-#ifdef UsingFloat
     double x;
-#endif
-
-    mymalloc = malloc_func;
-    myfree = free_func;
 
     /* Seed the random number generator.  If Repeatable is defined, we
        always use the same seed.  Otherwise, we seed from the clock to
        shake things up from run to run. */
 
-    mysrand(1234);
+#ifdef Repeatable
+    V srand(1234);
+#else
+    V srand((int) time((long *) NULL));
+#endif
 
     /*	Compute x such that pow(x, p) ranges between 1 and 4*ExpIncr as
 	p ranges from 0 to ExpIncr-1, with a concentration in the lower
 	numbers.  */
 
-#ifdef UsingFloat
     x = 4.0 * ExpIncr;
     x = log(x);
     x = exp(log(4.0 * ExpIncr) / (ExpIncr - 1.0));
-#endif
 
 #ifdef BECtl
-    bectl(bcompact, bexpand, bshrink, (bufsize) ExpIncr, &mypoolset);
-    bp = mymalloc(ExpIncr);
+    bectl(bcompact, bexpand, bshrink, (bufsize) ExpIncr);
+    bp = malloc(ExpIncr);
     assert(bp != NULL);
     bpool((void *) bp, (bufsize) ExpIncr);
 #else
-    bp = mymalloc(PoolSize);
+    bp = malloc(PoolSize);
     assert(bp != NULL);
-    bpool((void *) bp, (bufsize) PoolSize, &mypoolset);
+    bpool((void *) bp, (bufsize) PoolSize);
 #endif
 
-    stats("Create pool", &mypoolset);
-#ifdef BufValid
+    stats("Create pool");
     V bpoolv((void *) bp);
-#endif
-#ifdef BufDump
     bpoold((void *) bp, dumpAlloc, dumpFree);
-#endif
 
     for (i = 0; i < TestProg; i++) {
 	char *cb;
-#ifdef UsingFloat
-	bufsize bs = pow(x, (double) (myrand() & (ExpIncr - 1)));
-#else
-	bufsize bs = (myrand() & (ExpIncr * 4 - 1)) / (1 << (myrand() & 0x7));
-#endif
-	bufsize align = 0;
-	bufsize hdr_size = 0;
-
-        switch (rand() & 0x3) {
-        case 1:
-            align = 32;
-            break;
-        case 2:
-            align = 64;
-            break;
-        case 3:
-            align = 128;
-            break;
-        default:
-            break;
-        }
-
-        hdr_size = (rand() & 0x3) * BGET_HDR_QUANTUM;
+	bufsize bs = pow(x, (double) (rand() & (ExpIncr - 1)));
 
 	assert(bs <= (((bufsize) 4) * ExpIncr));
 	bs = blimit(bs);
-	if (myrand() & 0x400) {
-	    cb = (char *) bgetz(align, hdr_size, bs, &mypoolset);
+	if (rand() & 0x400) {
+	    cb = (char *) bgetz(bs);
 	} else {
-	    cb = (char *) bget(align, hdr_size, bs, &mypoolset);
+	    cb = (char *) bget(bs);
 	}
 	if (cb == NULL) {
 #ifdef EasyOut
@@ -1659,26 +1558,25 @@ int bget_main_test(void *(*malloc_func)(size_t), void (*free_func)(void *))
 		fb = *((char **) bc);
 		if (fb != NULL) {
 		    *((char **) bc) = *((char **) fb);
-		    brel((void *) fb, &mypoolset, true/*wipe*/);
+		    brel((void *) fb);
 		}
+		continue;
 	    }
-	    continue;
 #endif
 	}
-        assert(!align || !(((unsigned long)cb + hdr_size) & (align - 1)));
 	*((char **) cb) = (char *) bchain;
 	bchain = cb;
 
 	/* Based on a random cast, release a random buffer in the list
 	   of allocated buffers. */
 
-	if ((myrand() & 0x10) == 0) {
+	if ((rand() & 0x10) == 0) {
 	    char *bc = bchain;
-	    int j = myrand() & 0x3;
+	    int i = rand() & 0x3;
 
-	    while (j > 0 && bc != NULL) {
+	    while (i > 0 && bc != NULL) {
 		bc = *((char **) bc);
-		j--;
+		i--;
 	    }
 	    if (bc != NULL) {
 		char *fb;
@@ -1686,7 +1584,7 @@ int bget_main_test(void *(*malloc_func)(size_t), void (*free_func)(void *))
 		fb = *((char **) bc);
 		if (fb != NULL) {
 		    *((char **) bc) = *((char **) fb);
-		    brel((void *) fb, &mypoolset, true/*wipe*/);
+		    brel((void *) fb);
 		}
 	    }
 	}
@@ -1694,13 +1592,13 @@ int bget_main_test(void *(*malloc_func)(size_t), void (*free_func)(void *))
 	/* Based on a random cast, reallocate a random buffer in the list
 	   to a random size */
 
-	if ((myrand() & 0x20) == 0) {
+	if ((rand() & 0x20) == 0) {
 	    char *bc = bchain;
-	    int j = myrand() & 0x3;
+	    int i = rand() & 0x3;
 
-	    while (j > 0 && bc != NULL) {
+	    while (i > 0 && bc != NULL) {
 		bc = *((char **) bc);
-		j--;
+		i--;
 	    }
 	    if (bc != NULL) {
 		char *fb;
@@ -1709,53 +1607,39 @@ int bget_main_test(void *(*malloc_func)(size_t), void (*free_func)(void *))
 		if (fb != NULL) {
 		    char *newb;
 
-#ifdef UsingFloat
-		    bs = pow(x, (double) (myrand() & (ExpIncr - 1)));
-#else
-		    bs = (rand() & (ExpIncr * 4 - 1)) / (1 << (rand() & 0x7));
-#endif
+		    bs = pow(x, (double) (rand() & (ExpIncr - 1)));
 		    bs = blimit(bs);
 #ifdef BECtl
 		    protect = 1;      /* Protect against compaction */
 #endif
-		    newb = (char *) bgetr((void *) fb, align, hdr_size, bs, &mypoolset);
+		    newb = (char *) bgetr((void *) fb, bs);
 #ifdef BECtl
 		    protect = 0;
 #endif
 		    if (newb != NULL) {
-                        assert(!align || !(((unsigned long)newb + hdr_size) &
-                                           (align - 1)));
 			*((char **) bc) = newb;
 		    }
 		}
 	    }
 	}
     }
-    stats("\nAfter allocation", &mypoolset);
+    stats("\nAfter allocation");
     if (bp != NULL) {
-#ifdef BufValid
 	V bpoolv((void *) bp);
-#endif
-#ifdef BufDump
 	bpoold((void *) bp, dumpAlloc, dumpFree);
-#endif
     }
 
     while (bchain != NULL) {
 	char *buf = bchain;
 
 	bchain = *((char **) buf);
-	brel((void *) buf, &mypoolset, true/*wipe*/);
+	brel((void *) buf);
     }
-    stats("\nAfter release", &mypoolset);
+    stats("\nAfter release");
 #ifndef BECtl
     if (bp != NULL) {
-#ifdef BufValid
 	V bpoolv((void *) bp);
-#endif
-#ifdef BufDump
 	bpoold((void *) bp, dumpAlloc, dumpFree);
-#endif
     }
 #endif
 

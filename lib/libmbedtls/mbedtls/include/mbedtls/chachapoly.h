@@ -1,3 +1,4 @@
+/*  SPDX-License-Identifier: Apache-2.0 */
 /**
  * \file chachapoly.h
  *
@@ -12,9 +13,7 @@
  * \author Daniel King <damaki.gh@gmail.com>
  */
 
-/*
- *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
+/*  Copyright (C) 2006-2018, Arm Limited (or its affiliates), All Rights Reserved.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may
  *  not use this file except in compliance with the License.
@@ -27,24 +26,24 @@
  *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
+ *
+ *  This file is part of Mbed TLS (https://tls.mbed.org)
  */
 
 #ifndef MBEDTLS_CHACHAPOLY_H
 #define MBEDTLS_CHACHAPOLY_H
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
 
 /* for shared error codes */
-#include "mbedtls/poly1305.h"
+#include "poly1305.h"
 
-/** The requested operation is not permitted in the current state. */
-#define MBEDTLS_ERR_CHACHAPOLY_BAD_STATE            -0x0054
-/** Authenticated decryption failed: data was not authentic. */
-#define MBEDTLS_ERR_CHACHAPOLY_AUTH_FAILED          -0x0056
+#define MBEDTLS_ERR_CHACHAPOLY_BAD_STATE            -0x0054 /**< The requested operation is not permitted in the current state. */
+#define MBEDTLS_ERR_CHACHAPOLY_AUTH_FAILED          -0x0056 /**< Authenticated decryption failed: data was not authentic. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,7 +58,7 @@ mbedtls_chachapoly_mode_t;
 
 #if !defined(MBEDTLS_CHACHAPOLY_ALT)
 
-#include "mbedtls/chacha20.h"
+#include "chacha20.h"
 
 typedef struct mbedtls_chachapoly_context
 {
@@ -161,7 +160,7 @@ int mbedtls_chachapoly_setkey( mbedtls_chachapoly_context *ctx,
  * \param ctx       The ChaCha20-Poly1305 context. This must be initialized
  *                  and bound to a key.
  * \param nonce     The nonce/IV to use for the message.
- *                  This must be a readable buffer of length \c 12 Bytes.
+ *                  This must be a redable buffer of length \c 12 Bytes.
  * \param mode      The operation to perform: #MBEDTLS_CHACHAPOLY_ENCRYPT or
  *                  #MBEDTLS_CHACHAPOLY_DECRYPT (discouraged, see warning).
  *

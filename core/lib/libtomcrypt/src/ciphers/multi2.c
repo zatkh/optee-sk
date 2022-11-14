@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /**
   @file multi2.c
@@ -9,12 +16,12 @@
 
 #ifdef LTC_MULTI2
 
-static void s_pi1(ulong32 *p)
+static void pi1(ulong32 *p)
 {
    p[1] ^= p[0];
 }
 
-static void s_pi2(ulong32 *p, const ulong32 *k)
+static void pi2(ulong32 *p, const ulong32 *k)
 {
    ulong32 t;
    t = (p[1] + k[0]) & 0xFFFFFFFFUL;
@@ -23,7 +30,7 @@ static void s_pi2(ulong32 *p, const ulong32 *k)
    p[0] ^= t;
 }
 
-static void s_pi3(ulong32 *p, const ulong32 *k)
+static void pi3(ulong32 *p, const ulong32 *k)
 {
    ulong32 t;
    t = p[0] + k[1];
@@ -35,7 +42,7 @@ static void s_pi3(ulong32 *p, const ulong32 *k)
    p[1] ^= t;
 }
 
-static void s_pi4(ulong32 *p, const ulong32 *k)
+static void pi4(ulong32 *p, const ulong32 *k)
 {
    ulong32 t;
    t = (p[1] + k[3])  & 0xFFFFFFFFUL;
@@ -43,7 +50,7 @@ static void s_pi4(ulong32 *p, const ulong32 *k)
    p[0] ^= t;
 }
 
-static void s_setup(const ulong32 *dk, const ulong32 *k, ulong32 *uk)
+static void setup(const ulong32 *dk, const ulong32 *k, ulong32 *uk)
 {
    int n, t;
    ulong32 p[2];
@@ -52,46 +59,46 @@ static void s_setup(const ulong32 *dk, const ulong32 *k, ulong32 *uk)
 
    t = 4;
    n = 0;
-      s_pi1(p);
-      s_pi2(p, k);
+      pi1(p);
+      pi2(p, k);
       uk[n++] = p[0];
-      s_pi3(p, k);
+      pi3(p, k);
       uk[n++] = p[1];
-      s_pi4(p, k);
+      pi4(p, k);
       uk[n++] = p[0];
-      s_pi1(p);
+      pi1(p);
       uk[n++] = p[1];
-      s_pi2(p, k+t);
+      pi2(p, k+t);
       uk[n++] = p[0];
-      s_pi3(p, k+t);
+      pi3(p, k+t);
       uk[n++] = p[1];
-      s_pi4(p, k+t);
+      pi4(p, k+t);
       uk[n++] = p[0];
-      s_pi1(p);
+      pi1(p);
       uk[n++] = p[1];
 }
 
-static void s_encrypt(ulong32 *p, int N, const ulong32 *uk)
+static void encrypt(ulong32 *p, int N, const ulong32 *uk)
 {
    int n, t;
    for (t = n = 0; ; ) {
-      s_pi1(p); if (++n == N) break;
-      s_pi2(p, uk+t); if (++n == N) break;
-      s_pi3(p, uk+t); if (++n == N) break;
-      s_pi4(p, uk+t); if (++n == N) break;
+      pi1(p); if (++n == N) break;
+      pi2(p, uk+t); if (++n == N) break;
+      pi3(p, uk+t); if (++n == N) break;
+      pi4(p, uk+t); if (++n == N) break;
       t ^= 4;
    }
 }
 
-static void s_decrypt(ulong32 *p, int N, const ulong32 *uk)
+static void decrypt(ulong32 *p, int N, const ulong32 *uk)
 {
    int n, t;
    for (t = 4*(((N-1)>>2)&1), n = N; ;  ) {
       switch (n<=4 ? n : ((n-1)%4)+1) {
-         case 4: s_pi4(p, uk+t); --n; /* FALLTHROUGH */
-         case 3: s_pi3(p, uk+t); --n; /* FALLTHROUGH */
-         case 2: s_pi2(p, uk+t); --n; /* FALLTHROUGH */
-         case 1: s_pi1(p); --n; break;
+         case 4: pi4(p, uk+t); --n; /* FALLTHROUGH */
+         case 3: pi3(p, uk+t); --n; /* FALLTHROUGH */
+         case 2: pi2(p, uk+t); --n; /* FALLTHROUGH */
+         case 1: pi1(p); --n; break;
          case 0: return;
       }
       t ^= 4;
@@ -128,7 +135,7 @@ int  multi2_setup(const unsigned char *key, int keylen, int num_rounds, symmetri
    }
    LOAD32H(dk[0], key + 32);
    LOAD32H(dk[1], key + 36);
-   s_setup(dk, sk, skey->multi2.uk);
+   setup(dk, sk, skey->multi2.uk);
 
    zeromem(sk, sizeof(sk));
    zeromem(dk, sizeof(dk));
@@ -150,7 +157,7 @@ int multi2_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetr
    LTC_ARGCHK(skey != NULL);
    LOAD32H(p[0], pt);
    LOAD32H(p[1], pt+4);
-   s_encrypt(p, skey->multi2.N, skey->multi2.uk);
+   encrypt(p, skey->multi2.N, skey->multi2.uk);
    STORE32H(p[0], ct);
    STORE32H(p[1], ct+4);
    return CRYPT_OK;
@@ -171,7 +178,7 @@ int multi2_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetr
    LTC_ARGCHK(skey != NULL);
    LOAD32H(p[0], ct);
    LOAD32H(p[1], ct+4);
-   s_decrypt(p, skey->multi2.N, skey->multi2.uk);
+   decrypt(p, skey->multi2.N, skey->multi2.uk);
    STORE32H(p[0], pt);
    STORE32H(p[1], pt+4);
    return CRYPT_OK;
@@ -307,3 +314,7 @@ int multi2_keysize(int *keysize)
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

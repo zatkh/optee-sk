@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -10,7 +17,7 @@
 
 #ifdef LTC_CTR_MODE
 
-static void s_ctr_increment_counter(symmetric_CTR *ctr)
+static void ctr_increment_counter(symmetric_CTR *ctr)
 {
 	int x;
 
@@ -38,22 +45,22 @@ static void s_ctr_increment_counter(symmetric_CTR *ctr)
   @param ctr    CTR state
   @return CRYPT_OK if successful
 */
-static int s_ctr_encrypt(const unsigned char *pt, unsigned char *ct, unsigned long len, symmetric_CTR *ctr)
+static int _ctr_encrypt(const unsigned char *pt, unsigned char *ct, unsigned long len, symmetric_CTR *ctr)
 {
    int err;
 
    while (len) {
       /* is the pad empty? */
       if (ctr->padlen == ctr->blocklen) {
-         /* encrypt counter into pad */
-         if ((err = cipher_descriptor[ctr->cipher]->ecb_encrypt(ctr->ctr, ctr->pad, &ctr->key)) != CRYPT_OK) {
-            return err;
-         }
-         ctr->padlen = 0;
+        /* encrypt counter into pad */
+        if ((err = cipher_descriptor[ctr->cipher]->ecb_encrypt(ctr->ctr, ctr->pad, &ctr->key)) != CRYPT_OK) {
+          return err;
+        }
+        ctr->padlen = 0;
       }
 #ifdef LTC_FAST
       if ((ctr->padlen == 0) && (len >= (unsigned long)ctr->blocklen)) {
-         for (x = 0; x < ctr->blocklen; x += sizeof(LTC_FAST_TYPE)) {
+         for (int x = 0; x < ctr->blocklen; x += sizeof(LTC_FAST_TYPE)) {
             *(LTC_FAST_TYPE_PTR_CAST((unsigned char *)ct + x)) = *(LTC_FAST_TYPE_PTR_CAST((unsigned char *)pt + x)) ^
                                                            *(LTC_FAST_TYPE_PTR_CAST((unsigned char *)ctr->pad + x));
          }
@@ -69,7 +76,7 @@ static int s_ctr_encrypt(const unsigned char *pt, unsigned char *ct, unsigned lo
 
       /* done with one full block? if so, set counter for next block. */
       if (ctr->padlen == ctr->blocklen) {
-         s_ctr_increment_counter(ctr);
+         ctr_increment_counter(ctr);
       }
    }
    return CRYPT_OK;
@@ -117,14 +124,14 @@ int ctr_encrypt(const unsigned char *pt, unsigned char *ct, unsigned long len, s
        pt += (len / ctr->blocklen) * ctr->blocklen;
        ct += (len / ctr->blocklen) * ctr->blocklen;
        len %= ctr->blocklen;
-       /* counter was changed by accelerator so mark pad empty (will need updating in s_ctr_encrypt()) */
+       /* counter was changed by accelerator so mark pad empty (will need updating in _ctr_encrypt()) */
        ctr->padlen = ctr->blocklen;
      }
 
      /* try to re-synchronize on a block boundary for maximum use of acceleration */
      incr = ctr->blocklen - ctr->padlen;
      if (len >= incr + (unsigned long)ctr->blocklen) {
-       if ((err = s_ctr_encrypt(pt, ct, incr, ctr)) != CRYPT_OK) {
+       if ((err = _ctr_encrypt(pt, ct, incr, ctr)) != CRYPT_OK) {
          return err;
        }
        pt += incr;
@@ -134,7 +141,11 @@ int ctr_encrypt(const unsigned char *pt, unsigned char *ct, unsigned long len, s
      }
    }
 
-   return s_ctr_encrypt(pt, ct, len, ctr);
+   return _ctr_encrypt(pt, ct, len, ctr);
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

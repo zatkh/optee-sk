@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <util.h>
 
 /*
  * These macros are the offsets where images reside on sec mem
@@ -29,6 +28,8 @@
 #define BNXT_BSPD_CFG_SIZE	0x200
 
 #define BNXT_CRASH_DUMP_INFO_NS3_BASE	0x3a5ff00
+
+#define IS_ALIGNED(addr, algn)      (!((addr) & ((algn) - 1)))
 
 #define SZ_1K				0x400
 
@@ -428,8 +429,7 @@ static int ape_section_copy(struct ape_bin_hdr_s *bin_hdr,
 
 	if (SECTION_IS_ZIPPED(section)) {
 		work_buff_size = section->org_data_len + BUFFER_PADDING;
-		work_buff = (void *)phys_to_virt(TEMP_MEM, MEM_AREA_RAM_SEC,
-						 work_buff_size);
+		work_buff = (void *)phys_to_virt(TEMP_MEM, MEM_AREA_RAM_SEC);
 		if (!work_buff) {
 			EMSG("ERROR: buffer allocation");
 			return BNXT_FAILURE;
@@ -640,7 +640,7 @@ TEE_Result bnxt_load_fw(int chip_type)
 	uintptr_t src = 0;
 	struct bnxt_images_info bnxt_src_image_info;
 	vaddr_t sec_mem_dest = (vaddr_t)phys_to_virt(BNXT_BUFFER_SEC_MEM,
-						     MEM_AREA_RAM_SEC, 1);
+						     MEM_AREA_RAM_SEC);
 
 	memset(&bnxt_src_image_info, 0, sizeof(struct bnxt_images_info));
 
@@ -680,14 +680,12 @@ TEE_Result bnxt_load_fw(int chip_type)
 
 TEE_Result bnxt_copy_crash_dump(uint8_t *d, uint32_t offset, uint32_t len)
 {
-	size_t crash_len = 0;
 	void *s = NULL;
 
-	if (ADD_OVERFLOW(offset, len, &crash_len) ||
-	    crash_len > BNXT_CRASH_LEN)
+	if (offset + len > BNXT_CRASH_LEN)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	s = phys_to_virt(BNXT_CRASH_SEC_MEM + offset, MEM_AREA_RAM_SEC, len);
+	s = phys_to_virt(BNXT_CRASH_SEC_MEM + offset, MEM_AREA_RAM_SEC);
 
 	cache_op_inner(DCACHE_AREA_INVALIDATE, s, len);
 

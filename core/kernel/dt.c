@@ -5,7 +5,6 @@
 
 #include <assert.h>
 #include <kernel/dt.h>
-#include <kernel/interrupt.h>
 #include <kernel/linker.h>
 #include <libfdt.h>
 #include <mm/core_memprot.h>
@@ -33,6 +32,16 @@ const struct dt_driver *dt_find_compatible_driver(const void *fdt, int offs)
 	return NULL;
 }
 
+const struct dt_driver *__dt_driver_start(void)
+{
+	return &__rodata_dtdrv_start;
+}
+
+const struct dt_driver *__dt_driver_end(void)
+{
+	return &__rodata_dtdrv_end;
+}
+
 bool dt_have_prop(const void *fdt, int offs, const char *propname)
 {
 	const void *prop;
@@ -40,6 +49,27 @@ bool dt_have_prop(const void *fdt, int offs, const char *propname)
 	prop = fdt_getprop(fdt, offs, propname, NULL);
 
 	return prop;
+}
+
+int dt_get_irq(void *fdt, int node)
+{
+	const uint32_t *int_prop = NULL;
+	int len_prop = 0;
+	int it_num = DT_INFO_INVALID_INTERRUPT;
+
+	/*
+	 * Interrupt property can be defined with at least 2x32 bits word
+	 *  - Type of interrupt
+	 *  - Interrupt Number
+	 */
+	int_prop = fdt_getprop(fdt, node, "interrupts", &len_prop);
+
+	if (!int_prop || len_prop < 2)
+		return it_num;
+
+	it_num = fdt32_to_cpu(int_prop[1]);
+
+	return it_num;
 }
 
 int dt_disable_status(void *fdt, int node)
@@ -86,13 +116,12 @@ int dt_enable_secure_status(void *fdt, int node)
 	return 0;
 }
 
-int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size,
-	       enum dt_map_dev_directive mapping)
+int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size)
 {
 	enum teecore_memtypes mtype;
 	paddr_t pbase;
 	vaddr_t vbase;
-	size_t sz;
+	ssize_t sz;
 	int st;
 
 	assert(cpu_mmu_enabled());
@@ -105,32 +134,23 @@ int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size,
 	if (pbase == DT_INFO_INVALID_REG)
 		return -1;
 	sz = _fdt_reg_size(fdt, offs);
-	if (sz == DT_INFO_INVALID_REG_SIZE)
+	if (sz < 0)
 		return -1;
 
-	switch (mapping) {
-	case DT_MAP_AUTO:
-		if ((st & DT_STATUS_OK_SEC) && !(st & DT_STATUS_OK_NSEC))
-			mtype = MEM_AREA_IO_SEC;
-		else
-			mtype = MEM_AREA_IO_NSEC;
-		break;
-	case DT_MAP_SECURE:
+	if ((st & DT_STATUS_OK_SEC) && !(st & DT_STATUS_OK_NSEC))
 		mtype = MEM_AREA_IO_SEC;
-		break;
-	case DT_MAP_NON_SECURE:
+	else
 		mtype = MEM_AREA_IO_NSEC;
-		break;
-	default:
-		panic("Invalid mapping specified");
-		break;
-	}
 
 	/* Check if we have a mapping, create one if needed */
-	vbase = (vaddr_t)core_mmu_add_mapping(mtype, pbase, sz);
-	if (!vbase) {
+	if (!core_mmu_add_mapping(mtype, pbase, sz)) {
 		EMSG("Failed to map %zu bytes at PA 0x%"PRIxPA,
 		     (size_t)sz, pbase);
+		return -1;
+	}
+	vbase = (vaddr_t)phys_to_virt(pbase, mtype);
+	if (!vbase) {
+		EMSG("Failed to get VA for PA 0x%"PRIxPA, pbase);
 		return -1;
 	}
 
@@ -192,7 +212,7 @@ paddr_t _fdt_reg_base_address(const void *fdt, int offs)
 	return _fdt_read_paddr(reg, ncells);
 }
 
-size_t _fdt_reg_size(const void *fdt, int offs)
+ssize_t _fdt_reg_size(const void *fdt, int offs)
 {
 	const uint32_t *reg;
 	uint32_t sz;
@@ -202,26 +222,26 @@ size_t _fdt_reg_size(const void *fdt, int offs)
 
 	parent = fdt_parent_offset(fdt, offs);
 	if (parent < 0)
-		return DT_INFO_INVALID_REG_SIZE;
+		return DT_INFO_INVALID_REG;
 
 	reg = (const uint32_t *)fdt_getprop(fdt, offs, "reg", &len);
 	if (!reg)
-		return DT_INFO_INVALID_REG_SIZE;
+		return -1;
 
 	n = fdt_address_cells(fdt, parent);
 	if (n < 1 || n > 2)
-		return DT_INFO_INVALID_REG_SIZE;
+		return -1;
 
 	reg += n;
 
 	n = fdt_size_cells(fdt, parent);
 	if (n < 1 || n > 2)
-		return DT_INFO_INVALID_REG_SIZE;
+		return -1;
 
 	sz = fdt32_to_cpu(*reg);
 	if (n == 2) {
 		if (sz)
-			return DT_INFO_INVALID_REG_SIZE;
+			return -1;
 		reg++;
 		sz = fdt32_to_cpu(*reg);
 	}
@@ -262,19 +282,16 @@ int _fdt_get_status(const void *fdt, int offs)
 	return st;
 }
 
-void _fdt_fill_device_info(const void *fdt, struct dt_node_info *info, int offs)
+void _fdt_fill_device_info(void *fdt, struct dt_node_info *info, int offs)
 {
 	struct dt_node_info dinfo = {
 		.reg = DT_INFO_INVALID_REG,
-		.reg_size = DT_INFO_INVALID_REG_SIZE,
 		.clock = DT_INFO_INVALID_CLOCK,
 		.reset = DT_INFO_INVALID_RESET,
-		.interrupt = DT_INFO_INVALID_INTERRUPT,
 	};
 	const fdt32_t *cuint;
 
 	dinfo.reg = _fdt_reg_base_address(fdt, offs);
-	dinfo.reg_size = _fdt_reg_size(fdt, offs);
 
 	cuint = fdt_getprop(fdt, offs, "clocks", NULL);
 	if (cuint) {
@@ -288,50 +305,7 @@ void _fdt_fill_device_info(const void *fdt, struct dt_node_info *info, int offs)
 		dinfo.reset = (int)fdt32_to_cpu(*cuint);
 	}
 
-	dinfo.interrupt = dt_get_irq_type_prio(fdt, offs, &dinfo.type,
-					       &dinfo.prio);
-
 	dinfo.status = _fdt_get_status(fdt, offs);
 
 	*info = dinfo;
-}
-
-int _fdt_read_uint32_array(const void *fdt, int node, const char *prop_name,
-			   uint32_t *array, size_t count)
-{
-	const fdt32_t *cuint = NULL;
-	int len = 0;
-	uint32_t i = 0;
-
-	cuint = fdt_getprop(fdt, node, prop_name, &len);
-	if (!cuint)
-		return -FDT_ERR_NOTFOUND;
-
-	if ((uint32_t)len != (count * sizeof(uint32_t)))
-		return -FDT_ERR_BADLAYOUT;
-
-	for (i = 0; i < ((uint32_t)len / sizeof(uint32_t)); i++) {
-		*array = fdt32_to_cpu(*cuint);
-		array++;
-		cuint++;
-	}
-
-	return 0;
-}
-
-int _fdt_read_uint32(const void *fdt, int node, const char *prop_name,
-		     uint32_t *value)
-{
-	return _fdt_read_uint32_array(fdt, node, prop_name, value, 1);
-}
-
-uint32_t _fdt_read_uint32_default(const void *fdt, int node,
-				  const char *prop_name, uint32_t dflt_value)
-{
-	uint32_t value = 0;
-
-	if (_fdt_read_uint32(fdt, node, prop_name, &value) < 0)
-		return dflt_value;
-
-	return value;
 }

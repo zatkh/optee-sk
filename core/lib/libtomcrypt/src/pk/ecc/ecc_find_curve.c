@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
@@ -8,7 +15,7 @@
 static const struct {
    const char *OID;
    const char *names[6];
-} s_curve_names[] = {
+} _curve_names[] = {
 #ifdef LTC_ECC_SECP112R1
    {
       "1.3.132.0.6", { "SECP112R1", "ECC-112", NULL }
@@ -190,7 +197,7 @@ static const struct {
 };
 
 /* case-insensitive match + ignore '-', '_', ' ' */
-static int s_name_match(const char *left, const char *right)
+static int _name_match(const char *left, const char *right)
 {
    char lc_r, lc_l;
 
@@ -221,13 +228,13 @@ int ecc_find_curve(const char *name_or_oid, const ltc_ecc_curve **cu)
 
    *cu = NULL;
 
-   for (i = 0; s_curve_names[i].OID != NULL && !OID; i++) {
-      if (XSTRCMP(s_curve_names[i].OID, name_or_oid) == 0) {
-         OID = s_curve_names[i].OID;
+   for (i = 0; _curve_names[i].OID != NULL && !OID; i++) {
+      if (XSTRCMP(_curve_names[i].OID, name_or_oid) == 0) {
+         OID = _curve_names[i].OID;
       }
-      for (j = 0; s_curve_names[i].names[j] != NULL && !OID; j++) {
-         if (s_name_match(s_curve_names[i].names[j], name_or_oid)) {
-            OID = s_curve_names[i].OID;
+      for (j = 0; _curve_names[i].names[j] != NULL && !OID; j++) {
+         if (_name_match(_curve_names[i].names[j], name_or_oid)) {
+            OID = _curve_names[i].OID;
          }
       }
    }
@@ -245,3 +252,7 @@ int ecc_find_curve(const char *name_or_oid, const ltc_ecc_curve **cu)
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

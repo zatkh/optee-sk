@@ -3,7 +3,7 @@
  * Copyright (C) 2015 Freescale Semiconductor, Inc.
  * Copyright (c) 2016, Wind River Systems.
  * All rights reserved.
- * Copyright 2017-2020 NXP
+ * Copyright 2017-2019 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -31,7 +31,6 @@
 #define __IMX6_H__
 
 #include <registers/imx6-crm.h>
-#include <registers/imx6-dcp.h>
 
 #define UART1_BASE			0x2020000
 #define IOMUXC_BASE			0x020E0000
@@ -44,7 +43,6 @@
 #define ANATOP_BASE			0x020C8000
 #define ANATOP_SIZE			0x1000
 #define SNVS_BASE			0x020CC000
-#define SNVS_SIZE			0x4000
 #define GPC_BASE			0x020DC000
 #define GPC_SIZE			0x4000
 #define WDOG_BASE			0x020BC000
@@ -56,7 +54,6 @@
 #define MMDC_P1_BASE			0x021B4000
 #define MMDC_P1_SIZE			0x4000
 #define TZASC_BASE			0x21D0000
-#define TZASC_SIZE			0x4000
 #define TZASC2_BASE			0x21D4000
 #define UART2_BASE			0x021E8000
 #define UART3_BASE			0x021EC000
@@ -69,19 +66,12 @@
 #define AIPS3_BASE			0x02200000
 #define AIPS3_SIZE			0x100000
 
-#if defined(CFG_MX6ULL)
-#define RNGB_BASE			0x02284000
-#elif defined(CFG_MX6SL) || defined(CFG_MX6SLL)
-#define RNGB_BASE			0x021b4000
-#endif
-
 #define SCU_BASE			0x00A00000
 #define PL310_BASE			0x00A02000
 #define SRC_BASE			0x020D8000
 #define IRAM_BASE			0x00900000
 
 #define OCOTP_BASE			0x021BC000
-#define OCOTP_SIZE			0x4000
 
 #define GIC_BASE			0x00A00000
 #define GICD_OFFSET			0x1000
@@ -96,7 +86,6 @@
 #define GICC_OFFSET			0x100
 #define CAAM_BASE			0x02100000
 #endif
-#define CAAM_SIZE			0x40000
 
 #define GIC_CPU_BASE			(GIC_BASE + GICC_OFFSET)
 #define GIC_DIST_BASE			(GIC_BASE + GICD_OFFSET)
@@ -149,20 +138,6 @@
 #define DIGPROG_OFFSET	0x280
 #else
 #define DIGPROG_OFFSET	0x260
-#endif
-
-#if defined(CFG_MX6ULL)
-#define I2C1_BASE		0x021a0000
-#define I2C2_BASE		0x021a4000
-#define I2C3_BASE		0x021a8000
-#define I2C4_BASE		0x021f8000
-
-#define IOMUXC_I2C1_SCL_CFG_OFF	0x340
-#define IOMUXC_I2C1_SDA_CFG_OFF	0x344
-#define IOMUXC_I2C1_SCL_MUX_OFF	0xb4
-#define IOMUXC_I2C1_SDA_MUX_OFF	0xb8
-#define IOMUXC_I2C1_SCL_INP_OFF	0x5a4
-#define IOMUXC_I2C1_SDA_INP_OFF	0x5a8
 #endif
 
 #endif /* __IMX6_H__ */

@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 
@@ -25,7 +32,7 @@ int dsa_set_pqg_dsaparam(const unsigned char *dsaparam, unsigned long dsaparamle
    LTC_ARGCHK(ltc_mp.name != NULL);
 
    /* init key */
-   err = mp_init_multi(&key->p, &key->g, &key->q, &key->x, &key->y, LTC_NULL);
+   err = mp_init_multi(&key->p, &key->g, &key->q, &key->x, &key->y, NULL);
    if (err != CRYPT_OK) return err;
 
    if ((err = der_decode_sequence_multi(dsaparam, dsaparamlen,
@@ -55,3 +62,7 @@ LBL_ERR:
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

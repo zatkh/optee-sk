@@ -12,8 +12,7 @@
  * \author Daniel King <damaki.gh@gmail.com>
  */
 
-/*
- *  Copyright The Mbed TLS Contributors
+/*  Copyright (C) 2006-2018, Arm Limited (or its affiliates), All Rights Reserved.
  *  SPDX-License-Identifier: Apache-2.0
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,6 +26,8 @@
  *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
+ *
+ *  This file is part of Mbed TLS (https://tls.mbed.org)
  */
 
 #ifndef MBEDTLS_POLY1305_H
@@ -41,18 +42,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/** Invalid input parameter(s). */
-#define MBEDTLS_ERR_POLY1305_BAD_INPUT_DATA         -0x0057
+#define MBEDTLS_ERR_POLY1305_BAD_INPUT_DATA         -0x0057 /**< Invalid input parameter(s). */
 
 /* MBEDTLS_ERR_POLY1305_FEATURE_UNAVAILABLE is deprecated and should not be
  * used. */
-/** Feature not available. For example, s part of the API is not implemented. */
-#define MBEDTLS_ERR_POLY1305_FEATURE_UNAVAILABLE    -0x0059
+#define MBEDTLS_ERR_POLY1305_FEATURE_UNAVAILABLE    -0x0059 /**< Feature not available. For example, s part of the API is not implemented. */
 
 /* MBEDTLS_ERR_POLY1305_HW_ACCEL_FAILED is deprecated and should not be used.
  */
-/** Poly1305 hardware accelerator failed. */
-#define MBEDTLS_ERR_POLY1305_HW_ACCEL_FAILED        -0x005B
+#define MBEDTLS_ERR_POLY1305_HW_ACCEL_FAILED        -0x005B  /**< Poly1305 hardware accelerator failed. */
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #define DESC_DEF_ONLY
 #include "tomcrypt_private.h"
@@ -146,7 +153,7 @@ static int read_radix(void *a, const char *b, int radix)
       char c, *tmp, *q;
       const char *p;
       int i;
-      tmp = XMALLOC (1 + 2 * XSTRLEN (b));
+      tmp = XMALLOC (1 + 2 * strlen (b));
       if (tmp == NULL) {
          return CRYPT_MEM;
       }
@@ -656,3 +663,7 @@ const ltc_math_descriptor gmp_desc = {
 
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

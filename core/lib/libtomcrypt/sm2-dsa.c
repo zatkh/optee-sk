@@ -18,9 +18,10 @@
 /*
  * GM/T 0003.1‒2012 Part1 2 Section 6.1
  */
-TEE_Result sm2_ltc_dsa_sign(uint32_t algo, struct ecc_keypair *key,
-			    const uint8_t *msg, size_t msg_len, uint8_t *sig,
-			    size_t *sig_len)
+TEE_Result crypto_acipher_sm2_dsa_sign(uint32_t algo,
+				       struct ecc_keypair *key,
+				       const uint8_t *msg, size_t msg_len,
+				       uint8_t *sig, size_t *sig_len)
 {
 	TEE_Result res = TEE_SUCCESS;
 	ecc_point *x1y1p = NULL;
@@ -136,9 +137,10 @@ out:
 /*
  * GM/T 0003.1‒2012 Part1 2 Section 7.1
  */
-TEE_Result sm2_ltc_dsa_verify(uint32_t algo, struct ecc_public_key *key,
-			      const uint8_t *msg, size_t msg_len,
-			      const uint8_t *sig, size_t sig_len)
+TEE_Result crypto_acipher_sm2_dsa_verify(uint32_t algo,
+					 struct ecc_public_key *key,
+					 const uint8_t *msg, size_t msg_len,
+					 const uint8_t *sig, size_t sig_len)
 {
 	TEE_Result res = TEE_SUCCESS;
 	ecc_key ltc_key = { };

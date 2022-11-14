@@ -57,15 +57,14 @@ TEE_Result shdr_verify_signature(const struct shdr *shdr)
 	if (TEE_ALG_GET_MAIN_ALG(shdr->algo) != TEE_MAIN_ALGO_RSA)
 		return TEE_ERROR_SECURITY;
 
-	res = tee_alg_get_digest_size(TEE_DIGEST_HASH_TO_ALGO(shdr->algo),
-				      &hash_size);
+	res = tee_hash_get_digest_size(TEE_DIGEST_HASH_TO_ALGO(shdr->algo),
+				       &hash_size);
 	if (res)
 		return TEE_ERROR_SECURITY;
 	if (hash_size != shdr->hash_size)
 		return TEE_ERROR_SECURITY;
 
-	res = crypto_acipher_alloc_rsa_public_key(&key,
-						  ta_pub_key_modulus_size * 8);
+	res = crypto_acipher_alloc_rsa_public_key(&key, shdr->sig_size);
 	if (res)
 		return TEE_ERROR_SECURITY;
 

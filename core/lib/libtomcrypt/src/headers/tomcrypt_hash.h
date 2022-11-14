@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+/* SPDX-License-Identifier: BSD-2-Clause */
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /* ---- HASH FUNCTIONS ---- */
 #if defined(LTC_SHA3) || defined(LTC_KECCAK)
@@ -22,7 +29,7 @@ struct sha512_state {
 };
 #endif
 
-#ifdef LTC_SHA256
+#if defined(LTC_SHA256) || defined(LTC_SHA256_ARM32_CE)
 struct sha256_state {
     ulong64 length;
     ulong32 state[8], curlen;
@@ -30,7 +37,7 @@ struct sha256_state {
 };
 #endif
 
-#ifdef LTC_SHA1
+#if defined(LTC_SHA1) || defined(LTC_SHA1_ARM32_CE)
 struct sha1_state {
     ulong64 length;
     ulong32 state[5], curlen;
@@ -155,10 +162,10 @@ typedef union Hash_state {
 #ifdef LTC_SHA512
     struct sha512_state sha512;
 #endif
-#ifdef LTC_SHA256
+#if defined(LTC_SHA256) || defined(LTC_SHA256_ARM32_CE)
     struct sha256_state sha256;
 #endif
-#ifdef LTC_SHA1
+#if defined(LTC_SHA1) || defined(LTC_SHA1_ARM32_CE)
     struct sha1_state   sha1;
 #endif
 #ifdef LTC_MD5
@@ -343,7 +350,7 @@ int sha512_224_test(void);
 extern const struct ltc_hash_descriptor sha512_224_desc;
 #endif
 
-#ifdef LTC_SHA256
+#if defined(LTC_SHA256) || defined(LTC_SHA256_ARM32_CE)
 int sha256_init(hash_state * md);
 int sha256_process(hash_state * md, const unsigned char *in, unsigned long inlen);
 int sha256_done(hash_state * md, unsigned char *out);
@@ -362,7 +369,7 @@ extern const struct ltc_hash_descriptor sha224_desc;
 #endif
 #endif
 
-#ifdef LTC_SHA1
+#if defined(LTC_SHA1) || defined(LTC_SHA1_ARM32_CE)
 int sha1_init(hash_state * md);
 int sha1_process(hash_state * md, const unsigned char *in, unsigned long inlen);
 int sha1_done(hash_state * md, unsigned char *out);
@@ -494,10 +501,13 @@ int hash_memory(int hash,
                 const unsigned char *in,  unsigned long inlen,
                       unsigned char *out, unsigned long *outlen);
 int hash_memory_multi(int hash, unsigned char *out, unsigned long *outlen,
-                      const unsigned char *in, unsigned long inlen, ...)
-                      LTC_NULL_TERMINATED;
+                      const unsigned char *in, unsigned long inlen, ...);
 
 #ifndef LTC_NO_FILE
 int hash_filehandle(int hash, FILE *in, unsigned char *out, unsigned long *outlen);
 int hash_file(int hash, const char *fname, unsigned char *out, unsigned long *outlen);
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

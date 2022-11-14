@@ -28,7 +28,7 @@
 #define PM_HINT_IO_STATE		BIT(2)
 #define PM_HINT_CONTEXT_STATE		BIT(3)
 #define PM_HINT_PLATFORM_STATE_MASK	GENMASK_32(31, 16)
-#define PM_HINT_PLATFORM_STATE_SHIFT	U(16)
+#define PM_HINT_PLATFORM_STATE_SHIFT	16
 
 /*
  * PM_OP_SUSPEND: platform is suspending to a target low power state
@@ -51,13 +51,12 @@ enum pm_callback_order {
 	PM_CB_ORDER_MAX
 };
 
-#define PM_CALLBACK_HANDLE_INITIALIZER(_callback, _handle, _order, _name)\
-		((struct pm_callback_handle){				\
+#define PM_CALLBACK_HANDLE_INITIALIZER(_callback, _handle, _order)	\
+		(struct pm_callback_handle){				\
 			.callback = (_callback),			\
 			.handle = (_handle),				\
 			.order = (_order),				\
-			.name = (_name),				\
-		})
+		}
 
 #define PM_CALLBACK_GET_HANDLE(pm_handle)	((pm_handle)->handle)
 
@@ -76,8 +75,8 @@ typedef TEE_Result (*pm_callback)(enum pm_op op, uint32_t pm_hint,
  * non-fatal failure to suspend.
  *
  * Callback implementations should ensure their functions belong to unpaged
- * memory sections (see DECLARE_KEEP_PAGER()) since the callback is likely to
- * be called from an unpaged execution context.
+ * memory sections (see KEEP_PAGER()) since the callback is likely to be
+ * called from an unpaged execution context.
  *
  * Power Mamagement callback functions API:
  *
@@ -100,8 +99,6 @@ typedef TEE_Result (*pm_callback)(enum pm_op op, uint32_t pm_hint,
  * @callback - Registered callback function
  * @handle - Registered private handler for the callback
  * @order - Registered callback call order priority (PM_CB_ORDER_*)
- * @flags - Flags set by pm core to keep track of execution
- * @name - Registered callback name
  */
 struct pm_callback_handle {
 	/* Set by the caller when registering a callback */
@@ -110,7 +107,6 @@ struct pm_callback_handle {
 	uint8_t order;
 	/* Set by the system according to execution context */
 	uint8_t flags;
-	const char *name;
 };
 
 /*
@@ -129,14 +125,11 @@ void register_pm_cb(struct pm_callback_handle *pm_handle);
  *
  * @callback: Registered callback function
  * @handle: Registered private handle argument for the callback
- * @name: Registered callback name
  */
-static inline void register_pm_driver_cb(pm_callback callback, void *handle,
-					 const char *name)
+static inline void register_pm_driver_cb(pm_callback callback, void *handle)
 {
 	register_pm_cb(&PM_CALLBACK_HANDLE_INITIALIZER(callback, handle,
-						       PM_CB_ORDER_DRIVER,
-						       name));
+						       PM_CB_ORDER_DRIVER));
 }
 
 /*
@@ -146,14 +139,12 @@ static inline void register_pm_driver_cb(pm_callback callback, void *handle,
  *
  * @callback: Registered callback function
  * @handle: Registered private handle argument for the callback
- * @name: Registered callback name
  */
 static inline void register_pm_core_service_cb(pm_callback callback,
-					       void *handle, const char *name)
+					       void *handle)
 {
 	register_pm_cb(&PM_CALLBACK_HANDLE_INITIALIZER(callback, handle,
-						PM_CB_ORDER_CORE_SERVICE,
-						name));
+						PM_CB_ORDER_CORE_SERVICE));
 }
 
 /*

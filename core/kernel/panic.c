@@ -6,7 +6,6 @@
 
 #include <kernel/panic.h>
 #include <kernel/thread.h>
-#include <kernel/unwind.h>
 #include <trace.h>
 
 void __do_panic(const char *file __maybe_unused,
@@ -28,12 +27,8 @@ void __do_panic(const char *file __maybe_unused,
 			 file ? file : "?", file ? line : 0,
 			 func ? "<" : "", func ? func : "", func ? ">" : "");
 
-	print_kernel_stack();
+	EPRINT_STACK();
 	/* abort current execution */
 	while (1)
-		cpu_idle();
-}
-
-void __weak cpu_idle(void)
-{
+		;
 }

@@ -1,11 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /**
  * \file camellia.h
  *
  * \brief Camellia block cipher
  */
 /*
- *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
+ *  Copyright (C) 2006-2015, ARM Limited, All Rights Reserved
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may
  *  not use this file except in compliance with the License.
@@ -18,12 +18,14 @@
  *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
+ *
+ *  This file is part of mbed TLS (https://tls.mbed.org)
  */
 #ifndef MBEDTLS_CAMELLIA_H
 #define MBEDTLS_CAMELLIA_H
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
@@ -31,7 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "mbedtls/platform_util.h"
+#include "platform_util.h"
 
 #define MBEDTLS_CAMELLIA_ENCRYPT     1
 #define MBEDTLS_CAMELLIA_DECRYPT     0
@@ -39,16 +41,13 @@
 #if !defined(MBEDTLS_DEPRECATED_REMOVED)
 #define MBEDTLS_ERR_CAMELLIA_INVALID_KEY_LENGTH   MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( -0x0024 )
 #endif /* !MBEDTLS_DEPRECATED_REMOVED */
-/** Bad input data. */
-#define MBEDTLS_ERR_CAMELLIA_BAD_INPUT_DATA -0x0024
+#define MBEDTLS_ERR_CAMELLIA_BAD_INPUT_DATA -0x0024 /**< Bad input data. */
 
-/** Invalid data input length. */
-#define MBEDTLS_ERR_CAMELLIA_INVALID_INPUT_LENGTH -0x0026
+#define MBEDTLS_ERR_CAMELLIA_INVALID_INPUT_LENGTH -0x0026 /**< Invalid data input length. */
 
 /* MBEDTLS_ERR_CAMELLIA_HW_ACCEL_FAILED is deprecated and should not be used.
  */
-/** Camellia hardware accelerator failed. */
-#define MBEDTLS_ERR_CAMELLIA_HW_ACCEL_FAILED              -0x0027
+#define MBEDTLS_ERR_CAMELLIA_HW_ACCEL_FAILED              -0x0027  /**< Camellia hardware accelerator failed. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -273,7 +272,7 @@ int mbedtls_camellia_crypt_cfb128( mbedtls_camellia_context *ctx,
  *             encrypted: for example, with 96-bit random nonces, you should
  *             not encrypt more than 2**32 messages with the same key.
  *
- *             Note that for both strategies, sizes are measured in blocks and
+ *             Note that for both stategies, sizes are measured in blocks and
  *             that a CAMELLIA block is \c 16 Bytes.
  *
  * \warning    Upon return, \p stream_block contains sensitive data. Its
@@ -309,16 +308,12 @@ int mbedtls_camellia_crypt_ctr( mbedtls_camellia_context *ctx,
                        unsigned char *output );
 #endif /* MBEDTLS_CIPHER_MODE_CTR */
 
-#if defined(MBEDTLS_SELF_TEST)
-
 /**
  * \brief          Checkup routine
  *
  * \return         0 if successful, or 1 if the test failed
  */
 int mbedtls_camellia_self_test( int verbose );
-
-#endif /* MBEDTLS_SELF_TEST */
 
 #ifdef __cplusplus
 }

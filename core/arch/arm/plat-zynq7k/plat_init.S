@@ -40,6 +40,7 @@
 #include <arm32_macros_cortex_a9.S>
 #include <asm.S>
 #include <kernel/tz_ssvce_def.h>
+#include <kernel/unwind.h>
 #include <platform_config.h>
 
 #define ZYNQ_SLCR_L2C_RAM	0xF8000A1C
@@ -57,6 +58,8 @@
  * Trap CPU in case of error.
  */
 FUNC plat_cpu_reset_early , :
+UNWIND(	.fnstart)
+
 	/*
 	 * Disallow NSec to mask FIQ [bit4: FW=0]
 	 * Allow NSec to manage Imprecise Abort [bit5: AW=1]
@@ -101,4 +104,5 @@ FUNC plat_cpu_reset_early , :
 	write_pcr r0
 
 	mov pc, lr
+UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early

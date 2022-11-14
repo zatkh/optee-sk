@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2019 NXP
  *
  * Brief   CAAM Descriptor interface.
  */
@@ -8,8 +8,6 @@
 #define __CAAM_DESC_HELPER_H__
 
 #include <caam_desc_defines.h>
-#include <caam_jr.h>
-#include <caam_utils_dmaobj.h>
 #include <trace.h>
 
 /*
@@ -22,25 +20,17 @@ void caam_desc_init(uint32_t *desc);
 void caam_desc_update_hdr(uint32_t *desc, uint32_t word);
 void caam_desc_add_ptr(uint32_t *desc, paddr_t ptr);
 void caam_desc_add_word(uint32_t *desc, uint32_t word);
-void caam_desc_add_dmaobj(uint32_t *desc, struct caamdmaobj *data,
-			  uint32_t pre_operation);
-
-#define caam_desc_fifo_load(desc, data, cla, dst, act)                         \
-	caam_desc_add_dmaobj(desc, data, FIFO_LD(cla, dst, act, 0))
-#define caam_desc_load_key(desc, data, cla, dst)                               \
-	caam_desc_add_dmaobj(desc, data, LD_KEY_PLAIN(cla, dst, 0))
-#define caam_desc_store(desc, data, cla, src)                                  \
-	caam_desc_add_dmaobj(desc, data, ST_NOIMM(cla, src, 0))
-#define caam_desc_fifo_store(desc, data, src)                                  \
-	caam_desc_add_dmaobj(desc, data, FIFO_ST(src, 0))
-#define caam_desc_seq_out(desc, data)                                          \
-	caam_desc_add_dmaobj(desc, data, SEQ_OUT_PTR(0))
 
 /* Push/Pop descriptor rings queue */
-void caam_desc_push(struct caam_inring_entry *in_entry, paddr_t paddr);
-paddr_t caam_desc_pop(struct caam_outring_entry *out_entry);
+#ifdef CFG_CAAM_64BIT
+void caam_desc_push(uint64_t *in_entry, paddr_t paddr);
+paddr_t caam_desc_pop(uint64_t *out_entry);
+#else
+void caam_desc_push(uint32_t *in_entry, paddr_t paddr);
+paddr_t caam_desc_pop(uint32_t *out_entry);
+#endif /* CFG_CAAM_64BIT */
 
-uint32_t caam_read_jobstatus(struct caam_outring_entry *out);
+uint32_t caam_read_jobstatus(uint32_t *addr);
 
 /* Debug print function to dump a Descriptor in hex */
 static inline void dump_desc(uint32_t *desc)
@@ -92,26 +82,10 @@ static inline void dump_desc(uint32_t *desc)
 
 /*
  * Jump Local of class 1 to descriptor offset if test meet the
- * condition cond
+ * condition ond
  */
 #define JUMP_C1_LOCAL(test, cond, offset)                                      \
 	JUMP_LOCAL(CLASS_1, test, cond, offset)
-
-/*
- * First decrement specified source then
- * Jump Local of no class to descriptor offset if test meet the
- * condition cond
- */
-#define JUMP_CNO_LOCAL_DEC(test, src, cond, offset)                            \
-	(CMD_JUMP_TYPE | CMD_CLASS(CLASS_NO) | JUMP_TYPE(LOCAL_DEC) |          \
-	 JUMP_TST_TYPE(test) | JMP_SRC(src) | (cond) |                         \
-	 JMP_LOCAL_OFFSET(offset))
-
-/*
- * Wait until test condition meet and jump next
- */
-#define WAIT_COND(test, cond)                                                  \
-	(JUMP_LOCAL(CLASS_NO, test, JMP_COND(cond), 1) | JMP_JSL)
 
 /*
  * Jump No Local of class cla to descriptor offset if test meet the
@@ -217,13 +191,6 @@ static inline void dump_desc(uint32_t *desc)
 	 STORE_OFFSET(off) | STORE_LENGTH(len))
 
 /*
- * Store value of length len from register src of class cla
- */
-#define ST_NOIMM_SEQ(cla, src, len)                                            \
-	(CMD_STORE_SEQ_TYPE | CMD_CLASS(cla) | STORE_SRC(src) |                \
-	 STORE_LENGTH(len))
-
-/*
  * FIFO Store from register src of length len
  */
 #define FIFO_ST(src, len)                                                      \
@@ -254,18 +221,11 @@ static inline void dump_desc(uint32_t *desc)
 	 FIFO_STORE_OUTPUT(src))
 
 /*
- * SEQ FIFO Store from register src of length len
- */
-#define FIFO_ST_SEQ(src, len)                                                  \
-	(CMD_SEQ_FIFO_STORE_TYPE | FIFO_STORE_OUTPUT(src) |                    \
-	 FIFO_STORE_LENGTH(len))
-
-/*
  * RNG State Handle instantation operation for sh ID
  */
 #define RNG_SH_INST(sh)                                                        \
 	(CMD_OP_TYPE | OP_TYPE(CLASS1) | OP_ALGO(RNG) | ALGO_RNG_SH(sh) |      \
-	 ALGO_AS(RNG_INSTANTIATE) | ALGO_RNG_PR)
+	 ALGO_AS(RNG_INSTANTIATE))
 
 /*
  * RNG Generates Secure Keys
@@ -371,15 +331,6 @@ static inline void dump_desc(uint32_t *desc)
 	 KEY_LENGTH(len))
 
 /*
- * Load a class cla key of length len to register dst.
- * Key can be stored in plain text.
- * Pointer is a Scatter/Gatter Table
- */
-#define LD_KEY_SGT_PLAIN(cla, dst, len)                                        \
-	(CMD_KEY_TYPE | CMD_CLASS(cla) | CMD_SGT | KEY_PTS | KEY_DEST(dst) |   \
-	 KEY_LENGTH(len))
-
-/*
  * Load a split key of length len.
  */
 #define LD_KEY_SPLIT(len)                                                      \
@@ -423,14 +374,6 @@ static inline void dump_desc(uint32_t *desc)
  */
 #define PKHA_CPY_SSIZE(src, dst)                                               \
 	(CMD_OP_TYPE | OP_TYPE(PKHA) | PKHA_ALG | PKHA_FUNC(CPY_SSIZE) |       \
-	 PKHA_CPY_SRC(src) | PKHA_CPY_DST(dst))
-
-/*
- * PKHA Copy N-Size function from src to dst. Copy number of words specified
- * in PKHA N size register
- */
-#define PKHA_CPY_NSIZE(src, dst)                                               \
-	(CMD_OP_TYPE | OP_TYPE(PKHA) | PKHA_ALG | PKHA_FUNC(CPY_NSIZE) |       \
 	 PKHA_CPY_SRC(src) | PKHA_CPY_DST(dst))
 
 /*

@@ -50,7 +50,6 @@
 #define UBMR  0xa8 /* BRM Modulator Register */
 #define UBRC  0xac /* Baud Rate Count Register */
 #define UTS   0xb4 /* UART Test Register (mx31) */
-#define USIZE 0xb8 /* UTS + sizeof(uint32_t) */
 
 /* UART Control Register Bit Fields.*/
 #define  URXD_CHARRDY    (1<<15)
@@ -88,7 +87,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct imx_uart_data *pd =
 		container_of(chip, struct imx_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, USIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void imx_uart_flush(struct serial_chip *chip)
@@ -128,7 +127,7 @@ static const struct serial_ops imx_uart_ops = {
 	.getchar = imx_uart_getchar,
 	.putc = imx_uart_putc,
 };
-DECLARE_KEEP_PAGER(imx_uart_ops);
+KEEP_PAGER(imx_uart_ops);
 
 void imx_uart_init(struct imx_uart_data *pd, paddr_t base)
 {
@@ -164,7 +163,7 @@ static int imx_uart_dev_init(struct serial_chip *chip, const void *fdt,
 	if (parms && parms[0])
 		IMSG("imx_uart: device parameters ignored (%s)", parms);
 
-	if (dt_map_dev(fdt, offs, &vbase, &size, DT_MAP_AUTO) < 0)
+	if (dt_map_dev(fdt, offs, &vbase, &size) < 0)
 		return -1;
 
 	pbase = virt_to_phys((void *)vbase);
@@ -192,9 +191,8 @@ static const struct dt_device_match imx_match_table[] = {
 	{ 0 }
 };
 
-DEFINE_DT_DRIVER(imx_dt_driver) = {
+const struct dt_driver imx_dt_driver __dt_driver = {
 	.name = "imx_uart",
-	.type = DT_DRIVER_UART,
 	.match_table = imx_match_table,
 	.driver = &imx_uart_driver,
 };

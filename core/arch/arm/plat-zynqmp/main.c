@@ -33,22 +33,21 @@
 
 #include <drivers/gic.h>
 #include <drivers/cdns_uart.h>
-#include <drivers/zynqmp_csu.h>
 
 #include <arm.h>
 #include <console.h>
-#include <io.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/interrupt.h>
 #include <kernel/misc.h>
-#include <kernel/tee_common_otp.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/tee_time.h>
 #include <mm/core_memprot.h>
-#include <tee/tee_fs.h>
+#include <tee/entry_fast.h>
+#include <tee/entry_std.h>
 #include <trace.h>
 
-static struct gic_data gic_data __nex_bss;
-static struct cdns_uart_data console_data __nex_bss;
+static struct gic_data gic_data;
+static struct cdns_uart_data console_data;
 
 register_phys_mem_pgdir(MEM_AREA_IO_SEC,
 			ROUNDDOWN(CONSOLE_UART_BASE, CORE_MMU_PGDIR_SIZE),
@@ -61,27 +60,40 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC,
 register_phys_mem_pgdir(MEM_AREA_IO_SEC,
 			ROUNDDOWN(GIC_BASE + GICD_OFFSET, CORE_MMU_PGDIR_SIZE),
 			CORE_MMU_PGDIR_SIZE);
-#if defined(CFG_ZYNQMP_CSU)
-register_phys_mem_pgdir(MEM_AREA_IO_SEC, CSU_BASE, CSU_SIZE);
-#endif
 
-#if CFG_DDR_SIZE > 0x80000000
-
-#ifdef CFG_ARM32_core
-#error DDR size over 2 GiB is not supported in 32 bit ARM mode
-#endif
-
-register_ddr(DRAM0_BASE, 0x80000000);
-register_ddr(DRAM1_BASE, CFG_DDR_SIZE - 0x80000000);
+static const struct thread_handlers handlers = {
+#if defined(CFG_WITH_ARM_TRUSTED_FW)
+	.cpu_on = cpu_on_handler,
+	.cpu_off = pm_do_nothing,
+	.cpu_suspend = pm_do_nothing,
+	.cpu_resume = pm_do_nothing,
+	.system_off = pm_do_nothing,
+	.system_reset = pm_do_nothing,
 #else
-register_ddr(DRAM0_BASE, CFG_DDR_SIZE);
+	.cpu_on = pm_panic,
+	.cpu_off = pm_panic,
+	.cpu_suspend = pm_panic,
+	.cpu_resume = pm_panic,
+	.system_off = pm_panic,
+	.system_reset = pm_panic,
 #endif
+};
+
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
 
 void main_init_gic(void)
 {
+	vaddr_t gicc_base, gicd_base;
+
+	gicc_base = (vaddr_t)phys_to_virt(GIC_BASE + GICC_OFFSET,
+					  MEM_AREA_IO_SEC);
+	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
+					  MEM_AREA_IO_SEC);
 	/* On ARMv8, GIC configuration is initialized in ARM-TF */
-	gic_init_base_addr(&gic_data, GIC_BASE + GICC_OFFSET,
-			   GIC_BASE + GICD_OFFSET);
+	gic_init_base_addr(&gic_data, gicc_base, gicd_base);
 }
 
 void itr_core_handler(void)
@@ -95,25 +107,3 @@ void console_init(void)
 		       CONSOLE_UART_CLK_IN_HZ, CONSOLE_BAUDRATE);
 	register_serial_console(&console_data.chip);
 }
-
-#if defined(CFG_RPMB_FS)
-bool plat_rpmb_key_is_ready(void)
-{
-	vaddr_t csu = core_mmu_get_va(CSU_BASE, MEM_AREA_IO_SEC, CSU_SIZE);
-	struct tee_hw_unique_key hwkey = { };
-	uint32_t status = 0;
-
-	if (tee_otp_get_hw_unique_key(&hwkey))
-		return false;
-
-	/*
-	 * For security reasons, we don't allow writing the RPMB key using the
-	 * development HUK even though it is unique.
-	 */
-	status = io_read32(csu + ZYNQMP_CSU_STATUS_OFFSET);
-	if (status & ZYNQMP_CSU_STATUS_AUTH)
-		return true;
-
-	return false;
-}
-#endif

@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -73,9 +80,9 @@ const struct ltc_hash_descriptor rmd128_desc =
       (a) = ROLc((a), (s));
 
 #ifdef LTC_CLEAN_STACK
-static int ss_rmd128_compress(hash_state *md, const unsigned char *buf)
+static int _rmd128_compress(hash_state *md, const unsigned char *buf)
 #else
-static int  s_rmd128_compress(hash_state *md, const unsigned char *buf)
+static int  rmd128_compress(hash_state *md, const unsigned char *buf)
 #endif
 {
    ulong32 aa,bb,cc,dd,aaa,bbb,ccc,ddd,X[16];
@@ -247,10 +254,10 @@ static int  s_rmd128_compress(hash_state *md, const unsigned char *buf)
 }
 
 #ifdef LTC_CLEAN_STACK
-static int s_rmd128_compress(hash_state *md, const unsigned char *buf)
+static int rmd128_compress(hash_state *md, const unsigned char *buf)
 {
    int err;
-   err = ss_rmd128_compress(md, buf);
+   err = _rmd128_compress(md, buf);
    burn_stack(sizeof(ulong32) * 24 + sizeof(int));
    return err;
 }
@@ -280,7 +287,7 @@ int rmd128_init(hash_state * md)
    @param inlen  The length of the data (octets)
    @return CRYPT_OK if successful
 */
-HASH_PROCESS(rmd128_process, s_rmd128_compress, rmd128, 64)
+HASH_PROCESS(rmd128_process, rmd128_compress, rmd128, 64)
 
 /**
    Terminate the hash to get the digest
@@ -314,7 +321,7 @@ int rmd128_done(hash_state * md, unsigned char *out)
         while (md->rmd128.curlen < 64) {
             md->rmd128.buf[md->rmd128.curlen++] = (unsigned char)0;
         }
-        s_rmd128_compress(md, md->rmd128.buf);
+        rmd128_compress(md, md->rmd128.buf);
         md->rmd128.curlen = 0;
     }
 
@@ -325,7 +332,7 @@ int rmd128_done(hash_state * md, unsigned char *out)
 
     /* store length */
     STORE64L(md->rmd128.length, md->rmd128.buf+56);
-    s_rmd128_compress(md, md->rmd128.buf);
+    rmd128_compress(md, md->rmd128.buf);
 
     /* copy output */
     for (i = 0; i < 4; i++) {
@@ -382,7 +389,7 @@ int rmd128_test(void)
 
    for (i = 0; i < (int)(sizeof(tests)/sizeof(tests[0])); i++) {
        rmd128_init(&md);
-       rmd128_process(&md, (unsigned char *)tests[i].msg, XSTRLEN(tests[i].msg));
+       rmd128_process(&md, (unsigned char *)tests[i].msg, strlen(tests[i].msg));
        rmd128_done(&md, tmp);
        if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "RIPEMD128", i)) {
           return CRYPT_FAIL_TESTVECTOR;
@@ -394,3 +401,7 @@ int rmd128_test(void)
 
 #endif
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

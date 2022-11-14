@@ -14,7 +14,7 @@
 #include <imx_pm.h>
 #include <kernel/panic.h>
 #include <kernel/cache_helpers.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <mm/core_mmu.h>
 #include <mm/core_memprot.h>
@@ -30,10 +30,7 @@ int imx7_cpu_suspend(uint32_t power_state __unused, uintptr_t entry,
 {
 	uint32_t suspend_ocram_base = core_mmu_get_va(TRUSTZONE_OCRAM_START +
 						      SUSPEND_OCRAM_OFFSET,
-						      MEM_AREA_TEE_COHERENT,
-						      sizeof(struct
-						      imx7_pm_info));
-
+						      MEM_AREA_TEE_COHERENT);
 	struct imx7_pm_info *p = (struct imx7_pm_info *)suspend_ocram_base;
 	int ret;
 

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2018-2019, Linaro Limited
- * Copyright (c) 2020, Open Mobile Platform LLC
  */
 #ifndef __PTA_SYSTEM_H
 #define __PTA_SYSTEM_H
@@ -189,16 +188,5 @@
  * [out]    memref[0]: Pointer to the buffer where to store the event log.
  */
 #define PTA_SYSTEM_GET_TPM_EVENT_LOG	12
-
-/*
- * Invoke a tee-supplicant's plugin
- *
- * [in]     memref[0]        uuid of the plugin (TEE_UUID)
- * [in]     value[1].a       command for the plugin
- * [in]     value[1].b       sub_command for the plugin
- * [in/out] memref[2]        additional data for the plugin
- * [out]    value[3].a       output length of data
- */
-#define PTA_SYSTEM_SUPP_PLUGIN_INVOKE	13
 
 #endif /* __PTA_SYSTEM_H */

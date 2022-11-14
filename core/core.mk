@@ -8,7 +8,6 @@ arch-dir	:= core/arch/$(ARCH)
 platform-dir	:= $(arch-dir)/plat-$(PLATFORM)
 include $(platform-dir)/conf.mk
 include mk/config.mk
-# $(ARCH).mk also sets the compiler for the core module
 include core/arch/$(ARCH)/$(ARCH).mk
 
 PLATFORM_$(PLATFORM) := y
@@ -17,11 +16,19 @@ PLATFORM_FLAVOR_$(PLATFORM_FLAVOR) := y
 $(eval $(call cfg-depends-all,CFG_PAGED_USER_TA,CFG_WITH_PAGER CFG_WITH_USER_TA))
 include core/crypto.mk
 
+# Setup compiler for this sub module
+COMPILER_$(sm)		?= $(COMPILER)
+include mk/$(COMPILER_$(sm)).mk
+
 cppflags$(sm)	+= -D__KERNEL__
 
 cppflags$(sm)	+= -Icore/include
 cppflags$(sm)	+= -include $(conf-file)
+# TODO: This directory does not exist in the output folder for x64 because we do
+#       not yet generate any headers.
+ifneq ($(ARCH),x64)
 cppflags$(sm)	+= -I$(out-dir)/core/include
+endif
 cppflags$(sm)	+= $(core-platform-cppflags)
 cflags$(sm)	+= $(core-platform-cflags)
 ifeq ($(CFG_CORE_SANITIZE_UNDEFINED),y)
@@ -39,13 +46,6 @@ cflags_kasan	+= -fsanitize=kernel-address \
 		   --param asan-stack=1 --param asan-globals=1 \
 		   --param asan-instrumentation-with-call-threshold=0
 cflags$(sm)	+= $(cflags_kasan)
-endif
-ifeq ($(CFG_CORE_DEBUG_CHECK_STACKS),y)
-finstrument-functions := $(call cc-option,-finstrument-functions)
-ifeq (,$(finstrument-functions))
-$(error -finstrument-functions not supported)
-endif
-cflags$(sm) += $(finstrument-functions)
 endif
 ifeq ($(CFG_SYSCALL_FTRACE),y)
 cflags$(sm)	+= -pg
@@ -132,19 +132,17 @@ include mk/lib.mk
 
 base-prefix :=
 
+ifeq ($(CFG_DT),y)
 libname = fdt
 libdir = core/lib/libfdt
 include mk/lib.mk
+endif
 
 ifeq ($(CFG_ZLIB),y)
 libname = zlib
 libdir = core/lib/zlib
 include mk/lib.mk
 endif
-
-libname = unw
-libdir = lib/libunw
-include mk/lib.mk
 
 #
 # Do main source
@@ -157,4 +155,4 @@ include mk/compile.mk
 
 include $(if $(wildcard $(platform-dir)/link.mk), \
 		$(platform-dir)/link.mk, \
-		core/arch/$(ARCH)/kernel/link.mk)
+		core/kernel/link.mk)

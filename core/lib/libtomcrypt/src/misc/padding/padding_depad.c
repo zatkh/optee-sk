@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 #ifdef LTC_PADDING
@@ -53,12 +60,6 @@ int padding_depad(const unsigned char *data, unsigned long *length, unsigned lon
          /* nop */
          break;
 #endif
-      case LTC_PAD_SSH:
-         pad = 0x1;
-         for (n = unpadded_length; n < padded_length; ++n) {
-            if (data[n] != pad++) return CRYPT_INVALID_PACKET;
-         }
-         break;
       case LTC_PAD_ONE_AND_ZERO:
          while (unpadded_length > 0 && data[unpadded_length - 1] != 0x80) {
             if (data[unpadded_length - 1] != 0x0) return CRYPT_INVALID_PACKET;
@@ -88,3 +89,7 @@ int padding_depad(const unsigned char *data, unsigned long *length, unsigned lon
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

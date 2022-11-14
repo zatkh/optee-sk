@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
@@ -12,7 +19,7 @@ int ltc_ecc_import_point(const unsigned char *in, unsigned long inlen, void *pri
    void *t1, *t2;
 
    /* init key + temporary numbers */
-   if (mp_init_multi(&t1, &t2, LTC_NULL) != CRYPT_OK) {
+   if (mp_init_multi(&t1, &t2, NULL) != CRYPT_OK) {
       return CRYPT_MEM;
    }
 
@@ -54,8 +61,12 @@ int ltc_ecc_import_point(const unsigned char *in, unsigned long inlen, void *pri
 
    err = CRYPT_OK;
 cleanup:
-   mp_clear_multi(t1, t2, LTC_NULL);
+   mp_clear_multi(t1, t2, NULL);
    return err;
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

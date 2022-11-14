@@ -6,7 +6,6 @@
 #ifndef __STM32_I2C_H
 #define __STM32_I2C_H
 
-#include <drivers/clk.h>
 #include <drivers/stm32_gpio.h>
 #include <kernel/dt.h>
 #include <mm/core_memprot.h>
@@ -22,9 +21,15 @@
  *
  * [1] https://www.nxp.com/docs/en/user-guide/UM10204.pdf
  */
-#define I2C_STANDARD_RATE	U(100000)
-#define I2C_FAST_RATE		U(400000)
-#define I2C_FAST_PLUS_RATE	U(1000000)
+enum i2c_speed_e {
+	I2C_SPEED_STANDARD,	/* 100 kHz */
+	I2C_SPEED_FAST,		/* 400 kHz */
+	I2C_SPEED_FAST_PLUS,	/* 1 MHz   */
+};
+
+#define I2C_STANDARD_RATE	100000
+#define I2C_FAST_RATE		400000
+#define I2C_FAST_PLUS_RATE	1000000
 
 /*
  * Initialization configuration structure for the STM32 I2C bus.
@@ -32,7 +37,6 @@
  *
  * @dt_status: non-secure/secure status read from DT
  * @pbase: I2C interface base address
- * @reg_size: I2C interface register map size
  * @clock: I2C bus/interface clock
  * @addr_mode_10b_not_7b: True if 10bit addressing mode, otherwise 7bit mode
  * @own_address1: 7-bit or 10-bit first device own address.
@@ -43,15 +47,14 @@
  * @no_stretch_mode: If enabling the No-Stretch mode
  * @rise_time: SCL clock pin rising time in nanoseconds
  * @fall_time: SCL clock pin falling time in nanoseconds
- * @bus_rate: Specifies the I2C clock frequency in Hertz
+ * @speed_mode: I2C clock source frequency mode
  * @analog_filter: True if enabling analog filter
  * @digital_filter_coef: filter coef (below STM32_I2C_DIGITAL_FILTER_MAX)
  */
 struct stm32_i2c_init_s {
 	unsigned int dt_status;
 	paddr_t pbase;
-	size_t reg_size;
-	struct clk *clock;
+	unsigned int clock;
 	bool addr_mode_10b_not_7b;
 	uint32_t own_address1;
 	bool dual_address_mode;
@@ -61,7 +64,7 @@ struct stm32_i2c_init_s {
 	bool no_stretch_mode;
 	uint32_t rise_time;
 	uint32_t fall_time;
-	uint32_t bus_rate;
+	enum i2c_speed_e speed_mode;
 	bool analog_filter;
 	uint8_t digital_filter_coef;
 };
@@ -82,7 +85,7 @@ enum i2c_mode_e {
 	I2C_MODE_MEM,		/* Communication in Memory Mode */
 };
 
-#define I2C_ERROR_NONE		U(0x0)
+#define I2C_ERROR_NONE		0x0
 #define I2C_ERROR_BERR		BIT(0)
 #define I2C_ERROR_ARLO		BIT(1)
 #define I2C_ERROR_ACKF		BIT(2)
@@ -103,37 +106,32 @@ struct i2c_cfg {
 /*
  * I2C bus device
  * @base: I2C SoC registers base address
- * @reg_size: I2C SoC registers address map size
  * @dt_status: non-secure/secure status read from DT
  * @clock: clock ID
  * @i2c_state: Driver state ID I2C_STATE_*
  * @i2c_err: Last error code I2C_ERROR_*
- * @saved_timing: Saved timing value if already computed
- * @saved_frequency: Saved frequency value if already computed
- * @sec_cfg: I2C registers configuration storage
+ * @sec_cfg: I2C regsiters configuration storage
  * @pinctrl: PINCTRLs configuration for the I2C PINs
  * @pinctrl_count: Number of PINCTRLs elements
  */
 struct i2c_handle_s {
 	struct io_pa_va base;
-	size_t reg_size;
 	unsigned int dt_status;
-	struct clk *clock;
+	unsigned long clock;
 	enum i2c_state_e i2c_state;
 	uint32_t i2c_err;
-	uint32_t saved_timing;
-	unsigned long saved_frequency;
 	struct i2c_cfg sec_cfg;
 	struct stm32_pinctrl *pinctrl;
 	size_t pinctrl_count;
 };
 
 /* STM32 specific defines */
-#define STM32_I2C_RISE_TIME_DEFAULT		U(25)	/* ns */
-#define STM32_I2C_FALL_TIME_DEFAULT		U(10)	/* ns */
-#define STM32_I2C_ANALOG_FILTER_DELAY_MIN	U(50)	/* ns */
-#define STM32_I2C_ANALOG_FILTER_DELAY_MAX	U(260)	/* ns */
-#define STM32_I2C_DIGITAL_FILTER_MAX		U(16)
+#define STM32_I2C_SPEED_DEFAULT			I2C_SPEED_STANDARD
+#define STM32_I2C_RISE_TIME_DEFAULT		25	/* ns */
+#define STM32_I2C_FALL_TIME_DEFAULT		10	/* ns */
+#define STM32_I2C_ANALOG_FILTER_DELAY_MIN	50	/* ns */
+#define STM32_I2C_ANALOG_FILTER_DELAY_MAX	260	/* ns */
+#define STM32_I2C_DIGITAL_FILTER_MAX		16
 
 /*
  * Fill struct stm32_i2c_init_s from DT content for a given I2C node
@@ -142,13 +140,13 @@ struct i2c_handle_s {
  * @node: Target I2C node in the DT
  * @init: Output stm32_i2c_init_s structure
  * @pinctrl: Reference to output pinctrl array
- * @pinctrl_count: Input @pinctrl array size, output expected size upon success
- * Return a TEE_Result compliant value
+ * @pinctrl_count: Input @pinctrl array size, output expected size
+ * Return 0 on success else a negative value
  */
-TEE_Result stm32_i2c_get_setup_from_fdt(void *fdt, int node,
-					struct stm32_i2c_init_s *init,
-					struct stm32_pinctrl **pinctrl,
-					size_t *pinctrl_count);
+int stm32_i2c_get_setup_from_fdt(void *fdt, int node,
+				 struct stm32_i2c_init_s *init,
+				 struct stm32_pinctrl **pinctrl,
+				 size_t *pinctrl_count);
 
 /*
  * Initialize I2C bus handle from input configuration directives

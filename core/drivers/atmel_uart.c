@@ -48,14 +48,13 @@
 #define ATMEL_UART_CMPR		0x0024 /* Comparison Register */
 #define ATMEL_UART_RTOR		0x0028 /* Receiver Time-out Register */
 #define ATMEL_UART_WPMR		0x00e4 /* Write Protect Mode Register */
-#define ATMEL_UART_SIZE		0x00e8 /* ATMEL_UART_WPMR + sizeof(uint32_t) */
 
 static vaddr_t chip_to_base(struct serial_chip *chip)
 {
 	struct atmel_uart_data *pd =
 		container_of(chip, struct atmel_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, ATMEL_UART_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void atmel_uart_flush(struct serial_chip *chip)

@@ -46,20 +46,7 @@ def get_args():
                         help='Github pull request ID. The script will '
                         'download the patchset from Github to a temporary '
                         'file and process it.')
-    parser.add_argument('-r', '--release-to', action='store_true',
-                        help='show all the recipients to be used in release '
-                        'announcement emails (i.e., maintainers, reviewers '
-                        'and OP-TEE mailing list(s)) and exit.')
     return parser.parse_args()
-
-
-def check_cwd():
-    cwd = os.getcwd()
-    parent = os.path.dirname(os.path.realpath(__file__)) + "/../"
-    if (os.path.realpath(cwd) != os.path.realpath(parent)):
-        print("Error: this script must be run from the top-level of the "
-              "optee_os tree")
-        exit(1)
 
 
 # Parse MAINTAINERS and return a dictionary of subsystems such as:
@@ -67,7 +54,12 @@ def check_cwd():
 #                     'F': [ 'path1', 'path2' ]}, ...}
 def parse_maintainers():
     subsystems = {}
-    check_cwd()
+    cwd = os.getcwd()
+    parent = os.path.dirname(os.path.realpath(__file__)) + "/../"
+    if (os.path.realpath(cwd) != os.path.realpath(parent)):
+        print("Error: this script must be run from the top-level of the "
+              "optee_os tree")
+        exit(1)
     with open("MAINTAINERS", "r") as f:
         start_found = False
         ss = {}
@@ -211,10 +203,6 @@ def get_ss_approvers(ss):
     return get_ss_maintainers(ss) + get_ss_reviewers(ss)
 
 
-def get_ss_lists(subsys):
-    return subsys.get('L') or []
-
-
 def approvers_have_approved(approved_by, approvers):
     for n in approvers:
         # Ignore anything after the email (Github ID...)
@@ -236,26 +224,11 @@ def download(pr):
     return f.name
 
 
-def show_release_to(subsystems):
-    check_cwd()
-    with open("MAINTAINERS", "r") as f:
-        emails = sorted(set(re.findall(r'[RM]:\t(.*[\w]*<[\w\.-]+@[\w\.-]+>)',
-                                       f.read())))
-        emails += get_ss_lists(subsystems["THE REST"])
-    print(*emails, sep=', ')
-
-
 def main():
     global args
 
     args = get_args()
-
     all_subsystems = parse_maintainers()
-
-    if args.release_to:
-        show_release_to(all_subsystems)
-        return
-
     paths = []
     arglist = []
     downloads = []

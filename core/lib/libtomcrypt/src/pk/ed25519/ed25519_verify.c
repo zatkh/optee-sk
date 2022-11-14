@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -9,11 +16,18 @@
 
 #ifdef LTC_CURVE25519
 
-static int s_ed25519_verify(const  unsigned char *msg, unsigned long msglen,
-                            const  unsigned char *sig, unsigned long siglen,
-                            const  unsigned char *ctx, unsigned long ctxlen,
-                                             int *stat,
-                            const curve25519_key *public_key)
+/**
+   Verify an Ed25519 signature.
+   @param private_key     The private Ed25519 key in the pair
+   @param public_key      The public Ed25519 key in the pair
+   @param out             [out] The destination of the shared data
+   @param outlen          [in/out] The max size and resulting size of the shared data.
+   @param stat            [out] The result of the signature verification, 1==valid, 0==invalid
+   @return CRYPT_OK if successful
+*/
+int ed25519_verify(const  unsigned char *msg, unsigned long msglen,
+                   const  unsigned char *sig, unsigned long siglen,
+                   int *stat, const curve25519_key *public_key)
 {
    unsigned char* m;
    unsigned long long mlen;
@@ -27,7 +41,7 @@ static int s_ed25519_verify(const  unsigned char *msg, unsigned long msglen,
    *stat = 0;
 
    if (siglen != 64uL) return CRYPT_INVALID_ARG;
-   if (public_key->algo != LTC_OID_ED25519) return CRYPT_PK_INVALID_TYPE;
+   if (public_key->algo != PKA_ED25519) return CRYPT_PK_INVALID_TYPE;
 
    mlen = msglen + siglen;
    if ((mlen < msglen) || (mlen < siglen)) return CRYPT_OVERFLOW;
@@ -41,94 +55,18 @@ static int s_ed25519_verify(const  unsigned char *msg, unsigned long msglen,
    err = tweetnacl_crypto_sign_open(stat,
                                     m, &mlen,
                                     m, mlen,
-                                    ctx, ctxlen,
                                     public_key->pub);
 
 #ifdef LTC_CLEAN_STACK
-   zeromem(m, msglen + siglen);
+   zeromem(m, mlen);
 #endif
    XFREE(m);
 
    return err;
 }
 
-/**
-   Verify an Ed25519ctx signature.
-   @param msg             [in] The data to be verified
-   @param msglen          [in] The size of the data to be verified
-   @param sig             [in] The signature to be verified
-   @param siglen          [in] The size of the signature to be verified
-   @param ctx             [in] The context
-   @param ctxlen          [in] The size of the context
-   @param stat            [out] The result of the signature verification, 1==valid, 0==invalid
-   @param public_key      [in] The public Ed25519 key in the pair
-   @return CRYPT_OK if successful
-*/
-int ed25519ctx_verify(const  unsigned char *msg, unsigned long msglen,
-                      const  unsigned char *sig, unsigned long siglen,
-                      const  unsigned char *ctx, unsigned long ctxlen,
-                                       int *stat,
-                      const curve25519_key *public_key)
-{
-   unsigned char ctx_prefix[292];
-   unsigned long ctx_prefix_size = sizeof(ctx_prefix);
-
-   LTC_ARGCHK(ctx != NULL);
-
-   if (ec25519_crypto_ctx(ctx_prefix, &ctx_prefix_size, 0, ctx, ctxlen) != CRYPT_OK)
-      return CRYPT_INVALID_ARG;
-
-   return s_ed25519_verify(msg, msglen, sig, siglen, ctx_prefix, ctx_prefix_size, stat, public_key);
-}
-
-/**
-   Verify an Ed25519ph signature.
-   @param msg             [in] The data to be verified
-   @param msglen          [in] The size of the data to be verified
-   @param sig             [in] The signature to be verified
-   @param siglen          [in] The size of the signature to be verified
-   @param ctx             [in] The context
-   @param ctxlen          [in] The size of the context
-   @param stat            [out] The result of the signature verification, 1==valid, 0==invalid
-   @param public_key      [in] The public Ed25519 key in the pair
-   @return CRYPT_OK if successful
-*/
-int ed25519ph_verify(const  unsigned char *msg, unsigned long msglen,
-                     const  unsigned char *sig, unsigned long siglen,
-                     const  unsigned char *ctx, unsigned long ctxlen,
-                                      int *stat,
-                     const curve25519_key *public_key)
-{
-   int err;
-   unsigned char msg_hash[64];
-   unsigned char ctx_prefix[292];
-   unsigned long ctx_prefix_size = sizeof(ctx_prefix);
-
-   if ((err = ec25519_crypto_ctx(ctx_prefix, &ctx_prefix_size, 1, ctx, ctxlen)) != CRYPT_OK)
-      return err;
-
-   if ((err = tweetnacl_crypto_ph(msg_hash, msg, msglen)) != CRYPT_OK)
-      return err;
-
-   return s_ed25519_verify(msg_hash, sizeof(msg_hash), sig, siglen, ctx_prefix, ctx_prefix_size, stat, public_key);
-}
-
-/**
-   Verify an Ed25519 signature.
-   @param msg             [in] The data to be verified
-   @param msglen          [in] The size of the data to be verified
-   @param sig             [in] The signature to be verified
-   @param siglen          [in] The size of the signature to be verified
-   @param stat            [out] The result of the signature verification, 1==valid, 0==invalid
-   @param public_key      [in] The public Ed25519 key in the pair
-   @return CRYPT_OK if successful
-*/
-int ed25519_verify(const  unsigned char *msg, unsigned long msglen,
-                   const  unsigned char *sig, unsigned long siglen,
-                                    int *stat,
-                   const curve25519_key *public_key)
-{
-   return s_ed25519_verify(msg, msglen, sig, siglen, NULL, 0, stat, public_key);
-}
-
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

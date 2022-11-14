@@ -21,7 +21,7 @@
 #define BCM_NITRO_CRASH_DUMP_BASE_ADDR		0x8b000000
 
 /* Default ELOG buffer size 1MB */
-#define DEFAULT_ELOG_BUFFER_SIZE		0x100000U
+#define DEFAULT_ELOG_BUFFER_SIZE		0x100000
 
 /*
  * Get Error log memory dump
@@ -60,9 +60,7 @@ static TEE_Result pta_elog_load_nitro_fw(uint32_t param_types,
 	TEE_Result res = TEE_SUCCESS;
 	paddr_t src_paddr = BCM_NITRO_FW_LOAD_ADDR + BNXT_IMG_SECMEM_OFFSET;
 	vaddr_t src_vaddr = 0;
-	uint32_t offset = 0;
-	size_t end_offs = 0;
-	size_t sz = 0;
+	uint32_t offset = 0, sz = 0;
 	char *buf = NULL;
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
@@ -81,25 +79,21 @@ static TEE_Result pta_elog_load_nitro_fw(uint32_t param_types,
 	}
 
 	offset = params[1].value.a;
-	buf = params[0].memref.buffer;
-	sz = params[0].memref.size;
 
 	/*
-	 * Check that we under no circumstances will attempt to write
-	 * beyond BCM_NITRO_FW_LOAD_ADDR + MAX_NITRO_FW_LOAD_MEM_SIZE.
+	 * Check if offset is within memory range reserved for nitro firmware
+	 * minus default size of buffer
 	 */
-	if (ADD_OVERFLOW(sz, offset, &end_offs) ||
-	    end_offs > MAX_NITRO_FW_LOAD_MEM_SIZE - BNXT_IMG_SECMEM_OFFSET) {
+	if (offset > MAX_NITRO_FW_LOAD_MEM_SIZE - DEFAULT_ELOG_BUFFER_SIZE) {
 		EMSG("Invalid access");
 		return TEE_ERROR_ACCESS_DENIED;
 	}
 
 	src_vaddr = (vaddr_t)phys_to_virt((uintptr_t)src_paddr + offset,
-					  MEM_AREA_RAM_SEC, sz);
-	if (!src_vaddr) {
-		EMSG("Not enough memory mapped");
-		return TEE_ERROR_BAD_PARAMETERS;
-	}
+					  MEM_AREA_RAM_SEC);
+
+	buf = params[0].memref.buffer;
+	sz = params[0].memref.size;
 
 	memcpy((char *)src_vaddr, buf, sz);
 
@@ -144,7 +138,6 @@ static TEE_Result pta_elog_nitro_crash_dump(uint32_t param_types,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE,
 						   TEE_PARAM_TYPE_NONE);
-	uint32_t sz = 0;
 
 	if (exp_param_types != param_types) {
 		EMSG("Invalid Param types");
@@ -162,18 +155,13 @@ static TEE_Result pta_elog_nitro_crash_dump(uint32_t param_types,
 		return TEE_ERROR_ACCESS_DENIED;
 	}
 
-	sz = MIN(params[0].memref.size, DEFAULT_ELOG_BUFFER_SIZE);
 	src_vaddr = (vaddr_t)phys_to_virt((uintptr_t)src_paddr + offset,
-					  MEM_AREA_RAM_SEC, sz);
-	if (!src_vaddr) {
-		EMSG("Not enough memory mapped");
-		return TEE_ERROR_BAD_PARAMETERS;
-	}
+					  MEM_AREA_RAM_SEC);
 
 	/* TODO : check if NITRO_CRASH_DUMP is available */
 
-	cache_op_inner(DCACHE_AREA_INVALIDATE, (void *)src_vaddr,
-		       DEFAULT_ELOG_BUFFER_SIZE);
+	cache_op_inner(DCACHE_AREA_INVALIDATE,
+		       (void *)src_vaddr, DEFAULT_ELOG_BUFFER_SIZE);
 
 	get_dump_data(src_vaddr, params);
 
@@ -191,19 +179,13 @@ static TEE_Result pta_elog_dump(uint32_t param_types,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE,
 						   TEE_PARAM_TYPE_NONE);
-	uint32_t sz = 0;
 
 	if (exp_param_types != param_types) {
 		EMSG("Invalid Param types");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	sz = MIN(params[0].memref.size, DEFAULT_ELOG_BUFFER_SIZE);
-	src_vaddr = (vaddr_t)phys_to_virt(src_paddr, MEM_AREA_RAM_NSEC, sz);
-	if (!src_vaddr) {
-		EMSG("Not enough memory mapped");
-		return TEE_ERROR_BAD_PARAMETERS;
-	}
+	src_vaddr = (vaddr_t)phys_to_virt(src_paddr, MEM_AREA_RAM_NSEC);
 
 	/* Validate if Error logs are present */
 	if ((*(uint32_t *)src_vaddr) != BCM_ELOG_GLOBAL_METADATA_SIG) {

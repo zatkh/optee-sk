@@ -1,12 +1,18 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
 int pk_oid_str_to_num(const char *OID, unsigned long *oid, unsigned long *oidlen)
 {
-   unsigned long i, j, limit, oid_j;
-   size_t OID_len;
+   unsigned long i, j, limit, OID_len, oid_j;
 
    LTC_ARGCHK(oidlen != NULL);
 
@@ -16,7 +22,7 @@ int pk_oid_str_to_num(const char *OID, unsigned long *oid, unsigned long *oidlen
 
    if (OID == NULL) return CRYPT_OK;
 
-   OID_len = XSTRLEN(OID);
+   OID_len = strlen(OID);
    if (OID_len == 0) return CRYPT_OK;
 
    for (i = 0, j = 0; i < OID_len; i++) {
@@ -49,7 +55,7 @@ int pk_oid_num_to_str(const unsigned long *oid, unsigned long oidlen, char *OID,
    char tmp[256] = { 0 };
 
    LTC_ARGCHK(oid != NULL);
-   LTC_ARGCHK(oidlen < INT_MAX);
+   LTC_ARGCHK(OID != NULL);
    LTC_ARGCHK(outlen != NULL);
 
    for (i = oidlen - 1, k = 0; i >= 0; i--) {
@@ -74,9 +80,12 @@ int pk_oid_num_to_str(const unsigned long *oid, unsigned long oidlen, char *OID,
       *outlen = k + 1;
       return CRYPT_BUFFER_OVERFLOW;
    }
-   LTC_ARGCHK(OID != NULL);
    for (j = 0; j < k; j++) OID[j] = tmp[k - j - 1];
    OID[k] = '\0';
    *outlen = k; /* the length without terminating NUL byte */
    return CRYPT_OK;
 }
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

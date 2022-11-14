@@ -294,7 +294,7 @@ static void pl022_control_cs(struct spi_chip *chip, enum gpio_level value)
 			;
 		DMSG("pl022 done - set CS!");
 
-		pd->cs_data.gpio_data.chip->ops->set_value(NULL,
+		pd->cs_data.gpio_data.chip->ops->set_value(
 			pd->cs_data.gpio_data.pin_num, value);
 		break;
 	case PL022_CS_CTRL_CB:
@@ -353,10 +353,10 @@ done:
 		*cpsdvr, *cpsdvr, *scr, *scr);
 }
 
-static void pl022_flush_fifo(struct spi_chip *chip)
+static void pl022_flush_fifo(struct pl022_data *pd)
 {
 	uint32_t __maybe_unused rdat;
-	struct pl022_data *pd = container_of(chip, struct pl022_data, chip);
+
 	do {
 		while (io_read32(pd->base + SSPSR) & SSPSR_RNE) {
 			rdat = io_read32(pd->base + SSPDR);
@@ -380,11 +380,11 @@ static void pl022_configure(struct spi_chip *chip)
 	case PL022_CS_CTRL_AUTO_GPIO:
 		DMSG("Use auto GPIO CS control");
 		DMSG("Mask/disable interrupt for CS GPIO");
-		pd->cs_data.gpio_data.chip->ops->set_interrupt(NULL,
+		pd->cs_data.gpio_data.chip->ops->set_interrupt(
 			pd->cs_data.gpio_data.pin_num,
 			GPIO_INTERRUPT_DISABLE);
 		DMSG("Set CS GPIO dir to out");
-		pd->cs_data.gpio_data.chip->ops->set_direction(NULL,
+		pd->cs_data.gpio_data.chip->ops->set_direction(
 			pd->cs_data.gpio_data.pin_num,
 			GPIO_DIR_OUT);
 		break;
@@ -469,7 +469,7 @@ static void pl022_configure(struct spi_chip *chip)
 		SSPICR_RORIC | SSPICR_RTIC);
 
 	DMSG("Empty FIFO before starting");
-	pl022_flush_fifo(chip);
+	pl022_flush_fifo(pd);
 }
 
 static void pl022_start(struct spi_chip *chip)
@@ -498,9 +498,8 @@ static const struct spi_ops pl022_ops = {
 	.txrx8 = pl022_txrx8,
 	.txrx16 = pl022_txrx16,
 	.end = pl022_end,
-	.flushfifo = pl022_flush_fifo,
 };
-DECLARE_KEEP_PAGER(pl022_ops);
+KEEP_PAGER(pl022_ops);
 
 void pl022_init(struct pl022_data *pd)
 {

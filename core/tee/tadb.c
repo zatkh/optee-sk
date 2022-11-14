@@ -80,10 +80,7 @@ static struct mutex tadb_mutex = MUTEX_INITIALIZER;
 
 static void file_num_to_str(char *buf, size_t blen, uint32_t file_number)
 {
-	int rc __maybe_unused = 0;
-
-	rc = snprintf(buf, blen, "%" PRIu32 ".ta", file_number);
-	assert(rc >= 0);
+	snprintf(buf, blen, "%" PRIu32 ".ta", file_number);
 }
 
 static bool is_null_uuid(const TEE_UUID *uuid)
@@ -96,22 +93,21 @@ static bool is_null_uuid(const TEE_UUID *uuid)
 static TEE_Result ta_operation_open(unsigned int cmd, uint32_t file_number,
 				    int *fd)
 {
-	struct thread_param params[3] = { };
-	struct mobj *mobj = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	void *va = NULL;
+	struct mobj *mobj;
+	TEE_Result res;
+	void *va;
 
-	va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_FS,
-					THREAD_SHM_TYPE_APPLICATION,
-					TEE_FS_NAME_MAX, &mobj);
+	va = tee_fs_rpc_cache_alloc(TEE_FS_NAME_MAX, &mobj);
 	if (!va)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
 	file_num_to_str(va, TEE_FS_NAME_MAX, file_number);
 
-	params[0] = THREAD_PARAM_VALUE(IN, cmd, 0, 0);
-	params[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, TEE_FS_NAME_MAX);
-	params[2] = THREAD_PARAM_VALUE(OUT, 0, 0, 0);
+	struct thread_param params[] = {
+		[0] = THREAD_PARAM_VALUE(IN, cmd, 0, 0),
+		[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, TEE_FS_NAME_MAX),
+		[2] = THREAD_PARAM_VALUE(OUT, 0, 0, 0),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_FS, ARRAY_SIZE(params), params);
 	if (!res)
@@ -122,20 +118,19 @@ static TEE_Result ta_operation_open(unsigned int cmd, uint32_t file_number,
 
 static TEE_Result ta_operation_remove(uint32_t file_number)
 {
-	struct thread_param params[2] = { };
-	struct mobj *mobj = NULL;
-	void *va = NULL;
+	struct mobj *mobj;
+	void *va;
 
-	va = thread_rpc_shm_cache_alloc(THREAD_SHM_CACHE_USER_FS,
-					THREAD_SHM_TYPE_APPLICATION,
-					TEE_FS_NAME_MAX, &mobj);
+	va = tee_fs_rpc_cache_alloc(TEE_FS_NAME_MAX, &mobj);
 	if (!va)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
 	file_num_to_str(va, TEE_FS_NAME_MAX, file_number);
 
-	params[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_FS_REMOVE, 0, 0);
-	params[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, TEE_FS_NAME_MAX);
+	struct thread_param params[] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_FS_REMOVE, 0, 0),
+		[1] = THREAD_PARAM_MEMREF(IN, mobj, 0, TEE_FS_NAME_MAX),
+	};
 
 	return thread_rpc_cmd(OPTEE_RPC_CMD_FS, ARRAY_SIZE(params), params);
 }
@@ -170,20 +165,12 @@ static TEE_Result set_file(struct tee_tadb_dir *db, int idx)
 
 static void clear_file(struct tee_tadb_dir *db, int idx)
 {
-	/*
-	 * This is safe because db->nbits > 0 implies that
-	 * db->files is non-NULL (see maybe_grow_files()).
-	 */
 	if (idx < db->nbits)
 		bit_clear(db->files, idx);
 }
 
 static bool test_file(struct tee_tadb_dir *db, int idx)
 {
-	/*
-	 * This is safe because db->nbits > 0 implies that
-	 * db->files is non-NULL (see maybe_grow_files()).
-	 */
 	if (idx < db->nbits)
 		return bit_test(db->files, idx);
 
@@ -319,7 +306,7 @@ static TEE_Result populate_files(struct tee_tadb_dir *db)
 	 * If db->files isn't NULL the bitfield is already populated and
 	 * there's nothing left to do here for now.
 	 */
-	if (db->nbits)
+	if (db->files)
 		return TEE_SUCCESS;
 
 	/*
@@ -694,7 +681,6 @@ TEE_Result tee_tadb_get_tag(struct tee_tadb_ta_read *ta, uint8_t *tag,
 
 static TEE_Result ta_load(struct tee_tadb_ta_read *ta)
 {
-	struct thread_param params[2] = { };
 	TEE_Result res;
 	const size_t sz = ta->entry.prop.custom_size + ta->entry.prop.bin_size;
 
@@ -705,11 +691,13 @@ static TEE_Result ta_load(struct tee_tadb_ta_read *ta)
 	if (!ta->ta_mobj)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
-	ta->ta_buf = mobj_get_va(ta->ta_mobj, 0, sz);
+	ta->ta_buf = mobj_get_va(ta->ta_mobj, 0);
 	assert(ta->ta_buf);
 
-	params[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_FS_READ, ta->fd, 0);
-	params[1] = THREAD_PARAM_MEMREF(OUT, ta->ta_mobj, 0, sz);
+	struct thread_param params[] = {
+		[0] = THREAD_PARAM_VALUE(IN, OPTEE_RPC_FS_READ, ta->fd, 0),
+		[1] = THREAD_PARAM_MEMREF(OUT, ta->ta_mobj, 0, sz),
+	};
 
 	res = thread_rpc_cmd(OPTEE_RPC_CMD_FS, ARRAY_SIZE(params), params);
 	if (res) {

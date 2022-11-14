@@ -27,80 +27,48 @@
  */
 
 #include <console.h>
-#include <crypto/crypto.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <mm/core_memprot.h>
 #include <platform_config.h>
 #include <stdint.h>
+#include <tee/entry_std.h>
+#include <tee/entry_fast.h>
 #include <drivers/scif.h>
 #include <drivers/gic.h>
 
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, CONSOLE_UART_BASE, SCIF_REG_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICD_BASE, GIC_DIST_REG_SIZE);
-register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICC_BASE, GIC_CPU_REG_SIZE);
-#ifdef PRR_BASE
-register_phys_mem_pgdir(MEM_AREA_IO_SEC, PRR_BASE, SMALL_PAGE_SIZE);
-#endif
+register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICC_BASE, GIC_DIST_REG_SIZE);
 
-/* Legacy platforms */
-#if defined(PLATFORM_FLAVOR_salvator_h3) || \
-	defined(PLATFORM_FLAVOR_salvator_h3_4x2g) || \
-	defined(PLATFORM_FLAVOR_salvator_m3) || \
-	defined(PLATFORM_FLAVOR_salvator_m3_2x4g) || \
-	defined(PLATFORM_FLAVOR_spider_s4)
-register_ddr(NSEC_DDR_0_BASE, NSEC_DDR_0_SIZE);
-register_ddr(NSEC_DDR_1_BASE, NSEC_DDR_1_SIZE);
+register_dynamic_shm(NSEC_DDR_0_BASE, NSEC_DDR_0_SIZE);
+register_dynamic_shm(NSEC_DDR_1_BASE, NSEC_DDR_1_SIZE);
 #ifdef NSEC_DDR_2_BASE
-register_ddr(NSEC_DDR_2_BASE, NSEC_DDR_2_SIZE);
+register_dynamic_shm(NSEC_DDR_2_BASE, NSEC_DDR_2_SIZE);
 #endif
 #ifdef NSEC_DDR_3_BASE
-register_ddr(NSEC_DDR_3_BASE, NSEC_DDR_3_SIZE);
+register_dynamic_shm(NSEC_DDR_3_BASE, NSEC_DDR_3_SIZE);
 #endif
-#endif
+
+static const struct thread_handlers handlers __nex_data = {
+	.cpu_on = cpu_on_handler,
+	.cpu_off = pm_do_nothing,
+	.cpu_suspend = pm_do_nothing,
+	.cpu_resume = pm_do_nothing,
+	.system_off = pm_do_nothing,
+	.system_reset = pm_do_nothing,
+};
 
 static struct scif_uart_data console_data __nex_bss;
-static struct gic_data gic_data __nex_bss;
 
-#ifdef PRR_BASE
-uint32_t rcar_prr_value __nex_bss;
-#endif
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
 
 void console_init(void)
 {
 	scif_uart_init(&console_data, CONSOLE_UART_BASE);
 	register_serial_console(&console_data.chip);
 }
-
-#ifdef CFG_RCAR_ROMAPI
-/* Should only seed from a hardware random number generator */
-static_assert(!IS_ENABLED(CFG_WITH_SOFTWARE_PRNG));
-
-unsigned long plat_get_aslr_seed(void)
-{
-	unsigned long seed = 0;
-
-	/* On RCAR we can get hw random bytes on early boot stages */
-	if (crypto_rng_read(&seed, sizeof(seed)))
-		panic();
-
-	return seed;
-}
-#endif
-
-void main_init_gic(void)
-{
-	gic_init(&gic_data, GICC_BASE, GICD_BASE);
-	itr_init(&gic_data.chip);
-}
-
-void main_secondary_init_gic(void)
-{
-	gic_cpu_init(&gic_data);
-}
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
-}
-

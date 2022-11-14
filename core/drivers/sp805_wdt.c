@@ -17,7 +17,7 @@ static vaddr_t chip_to_base(struct wdt_chip *chip)
 	struct sp805_wdt_data *pd =
 		container_of(chip, struct sp805_wdt_data, chip);
 
-	return io_pa_or_va(&pd->base, WDT_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static TEE_Result sp805_setload(struct wdt_chip *chip, unsigned long timeout)
@@ -96,7 +96,7 @@ static enum itr_return wdt_itr_cb(struct itr_handler *h)
 
 	return ITRR_HANDLED;
 }
-DECLARE_KEEP_PAGER(wdt_itr_cb);
+KEEP_PAGER(wdt_itr_cb);
 
 TEE_Result sp805_register_itr_handler(struct sp805_wdt_data *pd,
 				      uint32_t itr_num, uint32_t itr_flags,
@@ -106,14 +106,18 @@ TEE_Result sp805_register_itr_handler(struct sp805_wdt_data *pd,
 
 	assert(!pd->chip.wdt_itr);
 
-	wdt_itr = itr_alloc_add(itr_num, wdt_itr_cb,
-				itr_flags, &pd->chip);
+	wdt_itr = calloc(1, sizeof(*wdt_itr));
 	if (!wdt_itr)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
+	wdt_itr->it = itr_num;
+	wdt_itr->flags = itr_flags;
+	wdt_itr->handler = wdt_itr_cb;
+	wdt_itr->data = &pd->chip;
 	pd->itr_handler = itr_handler;
 	pd->chip.wdt_itr = wdt_itr;
 
+	itr_add(wdt_itr);
 	itr_enable(wdt_itr->it);
 
 	return TEE_SUCCESS;
@@ -125,7 +129,7 @@ static const struct wdt_ops sp805_wdt_ops = {
 	.ping = sp805_ping,
 	.set_timeout = sp805_setload,
 };
-DECLARE_KEEP_PAGER(sp805_wdt_ops);
+KEEP_PAGER(sp805_wdt_ops);
 
 TEE_Result sp805_wdt_init(struct sp805_wdt_data *pd, paddr_t base,
 		    uint32_t clk_rate, uint32_t timeout)

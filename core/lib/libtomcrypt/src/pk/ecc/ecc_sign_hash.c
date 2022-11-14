@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 #include "tomcrypt_private.h"
 
@@ -46,7 +53,7 @@ int ecc_sign_hash_ex(const unsigned char *in,  unsigned long inlen,
    }
 
    /* init the bignums */
-   if ((err = mp_init_multi(&r, &s, &e, &b, LTC_NULL)) != CRYPT_OK) {
+   if ((err = mp_init_multi(&r, &s, &e, &b, NULL)) != CRYPT_OK) {
       return err;
    }
 
@@ -158,7 +165,7 @@ int ecc_sign_hash_ex(const unsigned char *in,  unsigned long inlen,
 
       /* Store as SSH data sequence, per RFC4251 */
       err = ssh_encode_sequence_multi(out, outlen,
-                                      LTC_SSHDATA_STRING, name, namelen,
+                                      LTC_SSHDATA_STRING, name,
                                       LTC_SSHDATA_MPINT,  r,
                                       LTC_SSHDATA_MPINT,  s,
                                       LTC_SSHDATA_EOL,    NULL);
@@ -174,8 +181,12 @@ int ecc_sign_hash_ex(const unsigned char *in,  unsigned long inlen,
 error:
    ecc_free(&pubkey);
 errnokey:
-   mp_clear_multi(r, s, e, b, LTC_NULL);
+   mp_clear_multi(r, s, e, b, NULL);
    return err;
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

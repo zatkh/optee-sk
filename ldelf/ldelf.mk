@@ -17,7 +17,9 @@ endif
 ifeq ($(CFG_ARM32_core),y)
 CFG_ARM32_$(sm) := y
 endif
-arch-bits-$(sm) := $(arch-bits-core)
+ifeq ($(CFG_X64_core),y)
+CFG_X64_$(sm) := y
+endif
 
 cppflags$(sm)	+= -include $(conf-file)
 cppflags$(sm)	+= -DTRACE_LEVEL=$(CFG_TEE_CORE_LOG_LEVEL)
@@ -36,10 +38,6 @@ include mk/lib.mk
 
 libname = utee
 libdir = lib/libutee
-include mk/lib.mk
-
-libname = unw
-libdir = lib/libunw
 include mk/lib.mk
 
 base-prefix :=

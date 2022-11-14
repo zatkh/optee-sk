@@ -40,6 +40,7 @@
 #include <arm32_macros_cortex_a9.S>
 #include <asm.S>
 #include <kernel/tz_ssvce_def.h>
+#include <kernel/unwind.h>
 #include <platform_config.h>
 
 .section .text
@@ -55,6 +56,8 @@
  * Trap CPU in case of error.
  */
 FUNC plat_cpu_reset_early , :
+UNWIND(	.fnstart)
+
 	/*
 	 * Under very rare timing circumstances, transition into streaming
 	 * mode might create a data corruption
@@ -135,4 +138,5 @@ FUNC plat_cpu_reset_early , :
 	write_pcr r0
 
 	mov pc, lr
+UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early

@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 
@@ -29,7 +36,8 @@ int rsa_set_key(const unsigned char *N,  unsigned long Nlen,
    LTC_ARGCHK(e           != NULL);
    LTC_ARGCHK(ltc_mp.name != NULL);
 
-   if ((err = rsa_init(key)) != CRYPT_OK) return err;
+   err = mp_init_multi(&key->e, &key->d, &key->N, &key->dQ, &key->dP, &key->qP, &key->p, &key->q, NULL);
+   if (err != CRYPT_OK) return err;
 
    if ((err = mp_read_unsigned_bin(key->N , (unsigned char *)N , Nlen)) != CRYPT_OK)    { goto LBL_ERR; }
    if ((err = mp_read_unsigned_bin(key->e , (unsigned char *)e , elen)) != CRYPT_OK)    { goto LBL_ERR; }
@@ -121,3 +129,7 @@ LBL_ERR:
 }
 
 #endif /* LTC_MRSA */
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

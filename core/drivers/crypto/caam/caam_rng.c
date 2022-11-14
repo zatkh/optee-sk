@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /**
- * Copyright 2017-2021 NXP
+ * Copyright 2017-2019 NXP
  *
  * Brief   CAAM Random Number Generator manager.
  *         Implementation of RNG functions.
@@ -16,7 +16,6 @@
 #include <mm/core_memprot.h>
 #include <rng_support.h>
 #include <tee/cache.h>
-#include <tee/tee_cryp_utl.h>
 #include <string.h>
 
 /*
@@ -237,9 +236,6 @@ static enum caam_status do_check_data(void)
 	case DATA_OK:
 		return CAAM_NO_ERROR;
 
-	case DATA_FAILURE:
-		return CAAM_FAILURE;
-
 	default:
 		/* Wait until one of the data buffer completes */
 		do {
@@ -432,11 +428,11 @@ enum caam_status caam_rng_instantiation(void)
 	RNG_TRACE("RNG Instantation");
 
 	/* Check if RNG is already instantiated */
-	retstatus = caam_hal_rng_instantiated(rng_privdata->baseaddr);
-
-	/* RNG is already instantiated or an error occurred */
-	if (retstatus != CAAM_NOT_INIT)
+	if (caam_hal_rng_instantiated(rng_privdata->baseaddr)) {
+		RNG_TRACE("RNG already instantiated");
+		retstatus = CAAM_NO_ERROR;
 		goto end_inst;
+	}
 
 	/*
 	 * RNG needs to be instantiated. Allocate and prepare the
@@ -556,7 +552,7 @@ enum caam_status caam_rng_init(vaddr_t ctrl_addr)
 }
 
 #ifdef CFG_NXP_CAAM_RNG_DRV
-TEE_Result hw_get_random_bytes(void *buf, size_t blen)
+TEE_Result crypto_rng_read(void *buf, size_t blen)
 {
 	if (!buf)
 		return TEE_ERROR_BAD_PARAMETERS;
@@ -564,7 +560,13 @@ TEE_Result hw_get_random_bytes(void *buf, size_t blen)
 	return do_rng_read(buf, blen);
 }
 
-void plat_rng_init(void)
+uint8_t hw_get_random_byte(void)
 {
+	uint8_t data = 0;
+
+	if (do_rng_read(&data, 1) != TEE_SUCCESS)
+		panic();
+
+	return data;
 }
 #endif

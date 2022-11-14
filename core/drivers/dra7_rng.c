@@ -71,68 +71,62 @@
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, RNG_BASE, RNG_REG_SIZE);
 
 static unsigned int rng_lock = SPINLOCK_UNLOCK;
-static vaddr_t rng;
 
-static void dra7_rng_read64(uint32_t *low_word, uint32_t *high_word)
+uint8_t hw_get_random_byte(void)
 {
-	/* Is the result ready (available)? */
-	while (!(io_read32(rng + RNG_STATUS) & RNG_READY)) {
-		/* Is the shutdown threshold reached? */
-		if (io_read32(rng + RNG_STATUS) & SHUTDOWN_OFLO) {
-			uint32_t alarm = io_read32(rng + RNG_ALARMSTOP);
-			uint32_t tune = io_read32(rng + RNG_FRODETUNE);
-
-			/* Clear the alarm events */
-			io_write32(rng + RNG_ALARMMASK, 0x0);
-			io_write32(rng + RNG_ALARMSTOP, 0x0);
-			/* De-tune offending FROs */
-			io_write32(rng + RNG_FRODETUNE, tune ^ alarm);
-			/* Re-enable the shut down FROs */
-			io_write32(rng + RNG_FROENABLE, RNG_FRO_MASK);
-			/* Clear the shutdown overflow event */
-			io_write32(rng + RNG_INTACK, SHUTDOWN_OFLO);
-
-			DMSG("Fixed FRO shutdown\n");
-		}
-	}
-	/* Read random value */
-	*low_word = io_read32(rng + RNG_OUTPUT_L);
-	*high_word = io_read32(rng + RNG_OUTPUT_H);
-	/* Acknowledge read complete */
-	io_write32(rng + RNG_INTACK, RNG_READY);
-}
-
-TEE_Result hw_get_random_bytes(void *buf, size_t len)
-{
+	static int pos;
 	static union {
 		uint32_t val[2];
 		uint8_t byte[8];
-	} fifo;
-	static size_t fifo_pos;
-	uint8_t *buffer = buf;
-	size_t buffer_pos = 0;
+	} random;
+	vaddr_t rng = (vaddr_t)phys_to_virt(RNG_BASE, MEM_AREA_IO_SEC);
+	uint8_t ret;
 
-	while (buffer_pos < len) {
-		uint32_t exceptions = cpu_spin_lock_xsave(&rng_lock);
+	uint32_t exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
+	cpu_spin_lock(&rng_lock);
 
-		/* Refill our FIFO */
-		if (fifo_pos == 0)
-			dra7_rng_read64(&fifo.val[0], &fifo.val[1]);
+	if (!pos) {
+		/* Is the result ready (available)? */
+		while (!(io_read32(rng + RNG_STATUS) & RNG_READY)) {
+			/* Is the shutdown threshold reached? */
+			if (io_read32(rng + RNG_STATUS) & SHUTDOWN_OFLO) {
+				uint32_t alarm = io_read32(rng + RNG_ALARMSTOP);
+				uint32_t tune = io_read32(rng + RNG_FRODETUNE);
 
-		buffer[buffer_pos++] = fifo.byte[fifo_pos++];
-		fifo_pos %= 8;
+				/* Clear the alarm events */
+				io_write32(rng + RNG_ALARMMASK, 0x0);
+				io_write32(rng + RNG_ALARMSTOP, 0x0);
+				/* De-tune offending FROs */
+				io_write32(rng + RNG_FRODETUNE, tune ^ alarm);
+				/* Re-enable the shut down FROs */
+				io_write32(rng + RNG_FROENABLE, RNG_FRO_MASK);
+				/* Clear the shutdown overflow event */
+				io_write32(rng + RNG_INTACK, SHUTDOWN_OFLO);
 
-		cpu_spin_unlock_xrestore(&rng_lock, exceptions);
+				DMSG("Fixed FRO shutdown\n");
+			}
+		}
+		/* Read random value */
+		random.val[0] = io_read32(rng + RNG_OUTPUT_L);
+		random.val[1] = io_read32(rng + RNG_OUTPUT_H);
+		/* Acknowledge read complete */
+		io_write32(rng + RNG_INTACK, RNG_READY);
 	}
 
-	return TEE_SUCCESS;
+	ret = random.byte[pos];
+
+	pos = (pos + 1) % 8;
+
+	cpu_spin_unlock(&rng_lock);
+	thread_set_exceptions(exceptions);
+
+	return ret;
 }
 
 static TEE_Result dra7_rng_init(void)
 {
+	vaddr_t rng = (vaddr_t)phys_to_virt(RNG_BASE, MEM_AREA_IO_SEC);
 	uint32_t val;
-
-	rng = (vaddr_t)phys_to_virt(RNG_BASE, MEM_AREA_IO_SEC, RNG_REG_SIZE);
 
 	/* Execute a software reset */
 	io_write32(rng + RNG_SOFT_RESET_REG, RNG_SOFT_RESET);

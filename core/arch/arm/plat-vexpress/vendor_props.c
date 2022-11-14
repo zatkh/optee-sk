@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2016-2020, Linaro Limited.
+ * Copyright (c) 2016, Linaro Limited.
  */
-
-#include <kernel/tee_common_otp.h>
-#include <kernel/tee_ta_manager.h>
-#include <kernel/user_access.h>
-#include <tee/tee_cryp_utl.h>
 #include <tee/tee_svc.h>
 #include <user_ta_header.h>
 #include <util.h>
+#include <kernel/tee_ta_manager.h>
+#include <kernel/tee_common_otp.h>
+#include <tee/tee_cryp_utl.h>
 
 /*
  * The data to hash is 48 bytes made up of:
@@ -25,7 +23,7 @@
  * Note that this code assumes an endorsement seed
  * size == device ID size for convenience.
  */
-static TEE_Result get_prop_endorsement(struct ts_session *sess,
+static TEE_Result get_prop_endorsement(struct tee_ta_session *sess,
 				       void *buf, size_t *blen)
 {
 	TEE_Result res;
@@ -54,7 +52,7 @@ static TEE_Result get_prop_endorsement(struct ts_session *sess,
 
 	*bin_len = ta_endorsement_seed_size;
 
-	return copy_to_user(buf, bin, sizeof(bin));
+	return tee_svc_copy_to_user((void *)buf, bin, sizeof(bin));
 }
 
 static const struct tee_props vendor_propset_array_tee[] = {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2019 NXP
  *
  * Brief   CAAM Descriptor defines.
  */
@@ -13,7 +13,6 @@
  * Common Command constants
  */
 #define CMD_TYPE(cmd)		SHIFT_U32((cmd) & 0x1F, 27)
-#define GET_CMD_TYPE(op)	((op) & (SHIFT_U32(0x1F, 27)))
 #define CMD_CLASS(val)		SHIFT_U32((val) & 0x3, 25)
 #define CLASS_NO		0x0
 #define CLASS_1			0x1
@@ -74,7 +73,6 @@
  * STORE Command fields
  */
 #define CMD_STORE_TYPE		CMD_TYPE(0x0A)
-#define CMD_STORE_SEQ_TYPE	CMD_TYPE(0x0B)
 
 /* Store Source */
 #define STORE_SRC(reg)		SHIFT_U32((reg) & 0x7F, 16)
@@ -180,7 +178,6 @@
  * FIFO STORE Command fields
  */
 #define CMD_FIFO_STORE_TYPE	CMD_TYPE(0x0C)
-#define CMD_SEQ_FIFO_STORE_TYPE CMD_TYPE(0x0D)
 
 /* Extended Length */
 #define FIFO_STORE_EXT		BIT32(22)
@@ -250,8 +247,8 @@
 #define MOVE_SRC_MATH_REG2		MOVE_REG_SRC(0x6)
 #define MOVE_SRC_MATH_REG3		MOVE_REG_SRC(0x7)
 #define MOVE_SRC_NFIFO_DECO_ALIGN	MOVE_REG_SRC(0x8)
-#define MOVE_SRC_NFIFO_C1_ALIGN		(MOVE_REG_SRC(0x9) | MOVE_AUX(0x1))
-#define MOVE_SRC_NFIFO_C2_ALIGN		(MOVE_REG_SRC(0x9) | MOVE_AUX(0x0))
+#define MOVE_SRC_NFIFO_C1_ALIGN		(MOVE_REG_SRC(0x9) | MOVE_AUX(0x0))
+#define MOVE_SRC_NFIFO_C2_ALIGN		(MOVE_REG_SRC(0x9) | MOVE_AUX(0x1))
 #define MOVE_SRC_DECO_ALIGN		(MOVE_REG_SRC(0xA) | MOVE_AUX(0x0))
 #define MOVE_SRC_C1_ALIGN		(MOVE_REG_SRC(0xA) | MOVE_AUX(0x1))
 #define MOVE_SRC_C2_ALIGN		(MOVE_REG_SRC(0xA) | MOVE_AUX(0x2))
@@ -259,7 +256,7 @@
 #define MOVE_SRC_C2_KEY			MOVE_REG_SRC(0xE)
 
 /* Destination */
-#define MOVE_DST(dst)			SHIFT_U32((MOVE_DST_##dst), 16)
+#define MOVE_DST(dst)			SHIFT_U32((MOVE_DST_##dst) & 0xF, 16)
 #define MOVE_DST_C1_CTX_REG		0x0
 #define MOVE_DST_C2_CTX_REG		0x1
 #define MOVE_DST_OFIFO			0x2
@@ -270,7 +267,6 @@
 #define MOVE_DST_MATH_REG3		0x7
 #define MOVE_DST_IFIFO_C1		0x8
 #define MOVE_DST_IFIFO_C2		0x9
-#define MOVE_DST_IFIFO_C2_LC2		((0x9 << 16 | MOVE_AUX(0x1)) >> 16)
 #define MOVE_DST_IFIFO			0xA
 #define MOVE_DST_PKHA_A			0xC
 #define MOVE_DST_C1_KEY			0xD
@@ -412,9 +408,6 @@
 /* State Handle */
 #define ALGO_RNG_SH(sh)		SHIFT_U32((sh) & 0x3, 4)
 
-/* Prediction Resistance */
-#define ALGO_RNG_PR BIT32(1)
-
 /* State */
 #define AS_RNG_GENERATE		0x0
 #define AS_RNG_INSTANTIATE	0x1
@@ -425,9 +418,6 @@
  * JUMP Command fields
  */
 #define CMD_JUMP_TYPE		CMD_TYPE(0x14)
-
-/* Jump Select Type */
-#define JMP_JSL			BIT32(24)
 
 /* Jump Type */
 #define JUMP_TYPE(type)		SHIFT_U32((JMP_##type) & 0xF, 20)
@@ -447,20 +437,14 @@
 #define JMP_TST_ANY_COND_TRUE	0x2
 #define JMP_TST_ANY_COND_FALSE	0x3
 
-/* Jump Source to increment/decrement */
-#define JMP_SRC(src)	SHIFT_U32((JMP_SRC_##src) & 0xF, 12)
-#define JMP_SRC_MATH_0	0x0
-
 /* Test Condition */
 #define JMP_COND(cond)		SHIFT_U32((JMP_COND_##cond) & 0xFF, 8)
-#define JMP_COND_MATH(cond)	SHIFT_U32((JMP_COND_MATH_##cond) & 0xF, 8)
 #define JMP_COND_NONE		0x00
 #define JMP_COND_PKHA_IS_ZERO	0x80
 #define JMP_COND_PKHA_GCD_1	0x40
 #define JMP_COND_PKHA_IS_PRIME	0x20
 #define JMP_COND_MATH_N		0x08
 #define JMP_COND_MATH_Z		0x04
-#define JMP_COND_NIFP		0x04
 #define JMP_COND_MATH_C		0x02
 #define JMP_COND_MATH_NV	0x01
 
@@ -545,9 +529,6 @@
 #define CMD_SEQ_IN_TYPE		CMD_TYPE(0x1E)
 #define CMD_SEQ_OUT_TYPE	CMD_TYPE(0x1F)
 
-/* Extended Length */
-#define SEQ_EXT BIT(22)
-
 /* Length */
 #define SEQ_LENGTH(len)		SHIFT_U32((len) & 0xFFFF, 0)
 
@@ -563,7 +544,6 @@
 #define PKHA_OUTSEL_A		0x1
 
 #define PKHA_FUNC(func)		SHIFT_U32((PKHA_FUNC_##func) & 0x3F, 0)
-#define PKHA_FUNC_CPY_NSIZE		0x10
 #define PKHA_FUNC_CPY_SSIZE		0x11
 #define PKHA_FUNC_MOD_ADD_A_B		0x02
 #define PKHA_FUNC_MOD_SUB_A_B		0x03
@@ -624,15 +604,11 @@
  * Descriptor Protocol Data Block
  */
 /* RSA Encryption */
-#define PDB_RSA_ENC_SGT_F	SHIFT_U32(1, 31)
-#define PDB_RSA_ENC_SGT_G	SHIFT_U32(1, 30)
 #define PDB_RSA_ENC_E_SIZE(len)	SHIFT_U32((len) & 0xFFF, 12)
 #define PDB_RSA_ENC_N_SIZE(len)	SHIFT_U32((len) & 0xFFF, 0)
 #define PDB_RSA_ENC_F_SIZE(len)	SHIFT_U32((len) & 0xFFF, 0)
 
 /* RSA Decryption */
-#define PDB_RSA_DEC_SGT_G	SHIFT_U32(1, 31)
-#define PDB_RSA_DEC_SGT_F	SHIFT_U32(1, 30)
 #define PDB_RSA_DEC_D_SIZE(len)	SHIFT_U32((len) & 0xFFF, 12)
 #define PDB_RSA_DEC_N_SIZE(len)	SHIFT_U32((len) & 0xFFF, 0)
 #define PDB_RSA_DEC_Q_SIZE(len)	SHIFT_U32((len) & 0xFFF, 12)
@@ -656,32 +632,6 @@
 #define PDB_PKVERIFY_PD1	SHIFT_U32(1, 22)
 /* Shared Secret */
 #define PDB_SHARED_SECRET_PD1	SHIFT_U32(1, 25)
-
-/* DSA Signatures */
-#define PDB_DSA_SIGN_N(len) SHIFT_U32((len) & (0x7F), 0)
-#define PDB_DSA_SIGN_L(len) SHIFT_U32((len) & (0x3FF), 7)
-
-/* SGT Flags Signature */
-#define PDB_SGT_PKSIGN_MSG	SHIFT_U32(1, 27)
-#define PDB_SGT_PKSIGN_SIGN_C	SHIFT_U32(1, 26)
-#define PDB_SGT_PKSIGN_SIGN_D	SHIFT_U32(1, 25)
-
-/* DSA Verify */
-#define PDB_DSA_VERIF_N(len) SHIFT_U32((len) & (0x7F), 0)
-#define PDB_DSA_VERIF_L(len) SHIFT_U32((len) & (0x3FF), 7)
-
-/* SGT Flags Verify */
-#define PDB_SGT_PKVERIF_MSG	SHIFT_U32(1, 27)
-#define PDB_SGT_PKVERIF_SIGN_C	SHIFT_U32(1, 26)
-#define PDB_SGT_PKVERIF_SIGN_D	SHIFT_U32(1, 25)
-
-/* SGT Flags Shared Secret */
-#define PDB_SGT_PKDH_SECRET	SHIFT_U32(1, 27)
-
-/* DL Keypair Generation */
-#define PDB_DL_KEY_L_SIZE(len) SHIFT_U32((len) & (0x3FF), 7)
-#define PDB_DL_KEY_N_MASK      0x7F
-#define PDB_DL_KEY_N_SIZE(len) SHIFT_U32((len) & (PDB_DL_KEY_N_MASK), 0)
 
 /* ECC Domain Selection */
 #define PDB_ECC_ECDSEL(curve)	SHIFT_U32((curve) & 0x3F, 7)

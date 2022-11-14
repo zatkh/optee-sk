@@ -1,11 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /**
  * \file ssl_cache.h
  *
  * \brief SSL session cache implementation
  */
 /*
- *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
+ *  Copyright (C) 2006-2015, ARM Limited, All Rights Reserved
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may
  *  not use this file except in compliance with the License.
@@ -18,20 +18,16 @@
  *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
+ *
+ *  This file is part of mbed TLS (https://tls.mbed.org)
  */
 #ifndef MBEDTLS_SSL_CACHE_H
 #define MBEDTLS_SSL_CACHE_H
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
-
-#include "mbedtls/ssl.h"
+#include "ssl.h"
 
 #if defined(MBEDTLS_THREADING_C)
-#include "mbedtls/threading.h"
+#include "threading.h"
 #endif
 
 /**
@@ -50,7 +46,7 @@
 #define MBEDTLS_SSL_CACHE_DEFAULT_MAX_ENTRIES      50   /*!< Maximum entries in cache */
 #endif
 
-/** \} name SECTION: Module settings */
+/* \} name SECTION: Module settings */
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,8 +64,7 @@ struct mbedtls_ssl_cache_entry
     mbedtls_time_t timestamp;           /*!< entry timestamp    */
 #endif
     mbedtls_ssl_session session;        /*!< entry session      */
-#if defined(MBEDTLS_X509_CRT_PARSE_C) && \
-    defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
+#if defined(MBEDTLS_X509_CRT_PARSE_C)
     mbedtls_x509_buf peer_cert;         /*!< entry peer_cert    */
 #endif
     mbedtls_ssl_cache_entry *next;      /*!< chain pointer      */

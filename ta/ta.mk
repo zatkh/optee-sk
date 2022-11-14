@@ -22,6 +22,12 @@ ifeq ($(CFG_TEE_TA_MALLOC_DEBUG),y)
 $(sm)-platform-cppflags += -DENABLE_MDBG=1
 endif
 
+# Keep CFG_TA_DYNLINK for backwards compatibility
+# TODO: Is this required for x64?
+ifneq ($(ARCH),x64)
+$(call force,CFG_TA_DYNLINK,y)
+endif
+
 # Config variables to be explicitly exported to the dev kit conf.mk
 ta-mk-file-export-vars-$(sm) += CFG_TA_FLOAT_SUPPORT
 ta-mk-file-export-vars-$(sm) += CFG_CACHE_API
@@ -30,16 +36,12 @@ ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS_SELF_TEST
 ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS
 ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS_MPI
 ta-mk-file-export-vars-$(sm) += CFG_SYSTEM_PTA
+ta-mk-file-export-vars-$(sm) += CFG_TA_DYNLINK
+ta-mk-file-export-vars-$(sm) += CFG_TEE_TA_LOG_LEVEL
 ta-mk-file-export-vars-$(sm) += CFG_FTRACE_SUPPORT
 ta-mk-file-export-vars-$(sm) += CFG_UNWIND
 ta-mk-file-export-vars-$(sm) += CFG_TA_MCOUNT
-ta-mk-file-export-vars-$(sm) += CFG_TA_BTI
-ta-mk-file-export-vars-$(sm) += CFG_TA_PAUTH
 ta-mk-file-export-vars-$(sm) += CFG_CORE_TPM_EVENT_LOG
-ta-mk-file-export-add-$(sm) += CFG_TEE_TA_LOG_LEVEL ?= $(CFG_TEE_TA_LOG_LEVEL)_nl_
-ta-mk-file-export-vars-$(sm) += CFG_TA_BGET_TEST
-ta-mk-file-export-vars-$(sm) += CFG_ATTESTATION_PTA
-ta-mk-file-export-vars-$(sm) += CFG_MEMTAG
 
 # Expand platform flags here as $(sm) will change if we have several TA
 # targets. Platform flags should not change after inclusion of ta/ta.mk.
@@ -68,7 +70,7 @@ $$(arm32-user-sysregs-out)/$$(arm32-user-sysregs-$(1)-h): \
 		$(1) scripts/arm32_sysreg.py
 	@$(cmd-echo-silent) '  GEN     $$@'
 	$(q)mkdir -p $$(dir $$@)
-	$(q)$(PYTHON3) scripts/arm32_sysreg.py --guard __$$(arm32-user-sysregs-$(1)-h) \
+	$(q)scripts/arm32_sysreg.py --guard __$$(arm32-user-sysregs-$(1)-h) \
 		< $$< > $$@
 
 endef #process-arm32-user-sysreg
@@ -120,10 +122,7 @@ incfiles-extra-host += core/include/signed_hdr.h
 ifeq ($(ta-target),ta_arm32)
 incfiles-extra-host += $(out-dir)/include/generated/arm32_user_sysreg.h
 endif
-ifeq ($(CFG_SPMC_TESTS),y)
-incfiles-extra-host += core/arch/arm/include/ffa.h
-incfiles-extra-host += core/arch/arm/include/smccc.h
-endif
+
 #
 # Copy lib files and exported headers from each lib
 #
@@ -147,8 +146,7 @@ $(foreach f, $(libfiles), \
 
 # Copy .mk files
 ta-mkfiles = mk/compile.mk mk/subdir.mk mk/gcc.mk mk/clang.mk mk/cleandirs.mk \
-	mk/cc-option.mk \
-	ta/arch/$(ARCH)/link.mk ta/arch/$(ARCH)/link_shlib.mk \
+	ta/mk/link.mk ta/mk/link_shlib.mk \
 	ta/mk/ta_dev_kit.mk
 
 $(foreach f, $(ta-mkfiles), \
@@ -170,7 +168,7 @@ $(foreach f, $(incfiles-extra-host), \
 	$(eval $(call copy-file, $(f), $(out-dir)/export-$(sm)/host_include)))
 
 # Copy the src files
-ta-srcfiles = ta/arch/$(ARCH)/user_ta_header.c ta/arch/$(ARCH)/ta.ld.S
+ta-srcfiles = ta/user_ta_header.c ta/ta.ld.S
 ifeq ($(ta-target),ta_arm32)
 ta-srcfiles += ta/arch/$(ARCH)/ta_entry_a32.S
 endif
@@ -194,7 +192,6 @@ define mk-file-export
 .PHONY: $(conf-mk-file-export)
 $(conf-mk-file-export):
 	@$$(cmd-echo-silent) '  CHK    ' $$@
-	$(q)mkdir -p $$(dir $$@)
 	$(q)echo sm := $$(sm-$(conf-mk-file-export)) > $$@.tmp
 	$(q)echo sm-$$(sm-$(conf-mk-file-export)) := y >> $$@.tmp
 	$(q)($$(foreach v, $$(ta-mk-file-export-vars-$$(sm-$(conf-mk-file-export))), \

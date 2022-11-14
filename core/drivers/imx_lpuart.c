@@ -12,7 +12,6 @@
 
 #define STAT		0x14
 #define DATA		0x1C
-#define UART_SIZE	0x20
 #define STAT_TDRE	BIT(23)
 #define STAT_RDRF	BIT(21)
 #define STAT_OR		BIT(19)
@@ -22,7 +21,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct imx_uart_data *pd =
 		container_of(chip, struct imx_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, UART_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void imx_lpuart_flush(struct serial_chip *chip __unused)
@@ -60,7 +59,7 @@ static const struct serial_ops imx_lpuart_ops = {
 	.getchar = imx_lpuart_getchar,
 	.putc = imx_lpuart_putc,
 };
-DECLARE_KEEP_PAGER(imx_lpuart_ops);
+KEEP_PAGER(imx_lpuart_ops);
 
 void imx_uart_init(struct imx_uart_data *pd, paddr_t base)
 {
@@ -96,7 +95,7 @@ static int imx_lpuart_dev_init(struct serial_chip *chip, const void *fdt,
 	if (parms && parms[0])
 		IMSG("imx_lpuart: device parameters ignored (%s)", parms);
 
-	if (dt_map_dev(fdt, offs, &vbase, &size, DT_MAP_AUTO) < 0)
+	if (dt_map_dev(fdt, offs, &vbase, &size) < 0)
 		return -1;
 
 	pbase = virt_to_phys((void *)vbase);
@@ -125,9 +124,8 @@ static const struct dt_device_match imx_match_table[] = {
 	{ 0 }
 };
 
-DEFINE_DT_DRIVER(imx_dt_driver) = {
+const struct dt_driver imx_dt_driver __dt_driver = {
 	.name = "imx_lpuart",
-	.type = DT_DRIVER_UART,
 	.match_table = imx_match_table,
 	.driver = &imx_lpuart_driver,
 };

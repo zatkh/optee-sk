@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2017-2022, STMicroelectronics
+ * Copyright (c) 2017-2018, STMicroelectronics
  */
 
 #include <arm.h>
 #include <boot_api.h>
-#include <console.h>
-#include <drivers/clk.h>
-#include <drivers/rstctrl.h>
-#include <drivers/stm32mp1_pmic.h>
 #include <drivers/stm32mp1_rcc.h>
-#include <drivers/stpmic1.h>
-#include <drivers/stm32mp_dt_bindings.h>
 #include <io.h>
 #include <kernel/cache_helpers.h>
 #include <kernel/delay.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/interrupt.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
@@ -23,11 +17,8 @@
 #include <mm/core_memprot.h>
 #include <platform_config.h>
 #include <sm/psci.h>
-#include <sm/std_smc.h>
 #include <stm32_util.h>
 #include <trace.h>
-
-#define CONSOLE_FLUSH_DELAY_MS		10
 
 /*
  * SMP boot support and access to the mailbox
@@ -115,7 +106,6 @@ void stm32mp_register_online_cpu(void)
 			stm32_pm_cpu_power_down_wfi();
 			panic();
 		}
-		clk_disable(stm32mp_rcc_clock_id_to_clk(RTCAPB));
 	}
 
 	core_state[pos] = CORE_ON;
@@ -181,7 +171,7 @@ int psci_cpu_on(uint32_t core_id, uint32_t entry, uint32_t context_id)
 	unlock_state_access(exceptions);
 
 	if (rc == PSCI_RET_SUCCESS) {
-		boot_set_core_ns_entry(pos, entry, context_id);
+		generic_boot_set_core_ns_entry(pos, entry, context_id);
 		release_secondary_early_hpen(pos);
 	}
 
@@ -208,61 +198,22 @@ int psci_cpu_off(void)
 
 	unlock_state_access(exceptions);
 
-	/* Enable BKPREG access for the disabled CPU */
-	if (clk_enable(stm32mp_rcc_clock_id_to_clk(RTCAPB)))
-		panic();
-
 	thread_mask_exceptions(THREAD_EXCP_ALL);
 	stm32_pm_cpu_power_down_wfi();
 	panic();
 }
 #endif
 
-/* Override default psci_system_off() with platform specific sequence */
-void __noreturn psci_system_off(void)
-{
-	DMSG("core %u", get_core_pos());
-
-	if (TRACE_LEVEL >= TRACE_DEBUG) {
-		console_flush();
-		mdelay(CONSOLE_FLUSH_DELAY_MS);
-	}
-
-	if (stm32mp_with_pmic()) {
-		stm32mp_get_pmic();
-		stpmic1_switch_off();
-		udelay(100);
-	}
-
-	panic();
-}
-
-/* Override default psci_system_reset() with platform specific sequence */
-void __noreturn psci_system_reset(void)
-{
-	rstctrl_assert(stm32mp_rcc_reset_id_to_rstctrl(MPSYST_R));
-	udelay(100);
-	panic();
-}
-
 /* Override default psci_cpu_on() with platform supported features */
 int psci_features(uint32_t psci_fid)
 {
 	switch (psci_fid) {
-	case ARM_SMCCC_VERSION:
 	case PSCI_PSCI_FEATURES:
-	case PSCI_SYSTEM_RESET:
 	case PSCI_VERSION:
-		return PSCI_RET_SUCCESS;
+#if CFG_TEE_CORE_NB_CORE > 1
 	case PSCI_CPU_ON:
-	case PSCI_CPU_OFF:
-		if (CFG_TEE_CORE_NB_CORE > 1)
-			return PSCI_RET_SUCCESS;
-		return PSCI_RET_NOT_SUPPORTED;
-	case PSCI_SYSTEM_OFF:
-		if (stm32mp_with_pmic())
-			return PSCI_RET_SUCCESS;
-		return PSCI_RET_NOT_SUPPORTED;
+#endif
+		return PSCI_RET_SUCCESS;
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}

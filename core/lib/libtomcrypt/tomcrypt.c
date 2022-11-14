@@ -16,7 +16,7 @@
 #include <kernel/thread.h>
 #endif
 
-#if defined(_CFG_CORE_LTC_ACIPHER) || defined(_CFG_CORE_LTC_EC25519)
+#if defined(_CFG_CORE_LTC_ACIPHER)
 /* Random generator */
 static int prng_crypto_start(prng_state *prng __unused)
 {
@@ -72,14 +72,14 @@ static int prng_crypto_test(void)
 static const struct ltc_prng_descriptor prng_crypto_desc = {
 	.name = "prng_crypto",
 	.export_size = 64,
-	.start = prng_crypto_start,
-	.add_entropy = prng_crypto_add_entropy,
-	.ready = prng_crypto_ready,
-	.read = prng_crypto_read,
-	.done = prng_crypto_done,
-	.pexport = prng_crypto_export,
-	.pimport = prng_crypto_import,
-	.test = prng_crypto_test,
+	.start = &prng_crypto_start,
+	.add_entropy = &prng_crypto_add_entropy,
+	.ready = &prng_crypto_ready,
+	.read = &prng_crypto_read,
+	.done = &prng_crypto_done,
+	.pexport = &prng_crypto_export,
+	.pimport = &prng_crypto_import,
+	.test = &prng_crypto_test,
 };
 #endif /*_CFG_CORE_LTC_ACIPHER*/
 
@@ -117,7 +117,7 @@ static void tee_ltc_reg_algs(void)
 #if defined(_CFG_CORE_LTC_SHA512) || defined(_CFG_CORE_LTC_SHA512_DESC)
 	register_hash(&sha512_desc);
 #endif
-#if defined(_CFG_CORE_LTC_ACIPHER) || defined(_CFG_CORE_LTC_EC25519)
+#if defined(_CFG_CORE_LTC_ACIPHER)
 	register_prng(&prng_crypto_desc);
 #endif
 }

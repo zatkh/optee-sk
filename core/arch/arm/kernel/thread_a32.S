@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2016-2020, Linaro Limited
+ * Copyright (c) 2016-2017, Linaro Limited
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 
@@ -11,8 +11,9 @@
 #include <keep.h>
 #include <kernel/abort.h>
 #include <kernel/cache_helpers.h>
-#include <kernel/thread.h>
+#include <kernel/thread_defs.h>
 #include <kernel/thread_private.h>
+#include <kernel/unwind.h>
 #include <mm/core_mmu.h>
 
 	.syntax unified
@@ -27,52 +28,52 @@
 	.endm
 
 FUNC thread_set_abt_sp , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_ABT
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_set_abt_sp
 
 FUNC thread_set_und_sp , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_UND
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_set_und_sp
 
 FUNC thread_set_irq_sp , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_IRQ
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_set_irq_sp
 
 FUNC thread_set_fiq_sp , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_FIQ
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_set_fiq_sp
-
-FUNC thread_get_usr_sp , :
-	mrs	r1, cpsr
-	cpsid	aif
-	cps	#CPSR_MODE_SYS
-	mov	r0, sp
-	msr	cpsr, r1
-	bx	lr
-END_FUNC thread_get_usr_sp
 
 /* void thread_resume(struct thread_ctx_regs *regs) */
 FUNC thread_resume , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	add	r12, r0, #(13 * 4)	/* Restore registers r0-r12 later */
 
@@ -100,6 +101,7 @@ UNWIND(	.cantunwind)
 	ldm	r0, {r0-r12}
 	movsne	pc, lr
 	b	eret_to_user_mode
+UNWIND(	.fnend)
 END_FUNC thread_resume
 
 /*
@@ -107,6 +109,7 @@ END_FUNC thread_resume
  * the banked r8-r12 registers, returns original CPSR.
  */
 LOCAL_FUNC thread_save_state_fiq , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	mov	r9, lr
 
@@ -148,6 +151,7 @@ UNWIND(	.cantunwind)
 
 	mov	r0, r8			/* Return original CPSR */
 	bx	r9
+UNWIND(	.fnend)
 END_FUNC thread_save_state_fiq
 
 /*
@@ -155,6 +159,7 @@ END_FUNC thread_save_state_fiq
  * CPSR.
  */
 FUNC thread_save_state , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	push	{r12, lr}
 	/*
@@ -198,6 +203,7 @@ UNWIND(	.cantunwind)
 
 	mov	r0, r5			/* Return original CPSR */
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_save_state
 
 /*
@@ -205,35 +211,20 @@ END_FUNC thread_save_state
  *			    unsigned long a2, unsigned long a3)
  */
 FUNC thread_smc , :
-	push	{r4-r7}
-UNWIND(	.save	{r4-r7})
+UNWIND(	.fnstart)
 	smc	#0
-	pop	{r4-r7}
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_smc
 
-/* void thread_smccc(struct thread_smc_args *arg_res) */
-FUNC thread_smccc , :
-	push	{r4-r7}
-	push	{r0, lr}
-	ldm	r0, {r0-r7}
-#ifdef CFG_CORE_SEL2_SPMC
-	hvc	#0
-#else
-	smc	#0
-#endif
-	pop	{r12, lr}
-	stm	r12, {r0-r7}
-	pop	{r4-r7}
-	bx	lr
-END_FUNC thread_smccc
-
 FUNC thread_init_vbar , :
+UNWIND(	.fnstart)
 	/* Set vector (VBAR) */
 	write_vbar r0
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC thread_init_vbar
-DECLARE_KEEP_PAGER thread_init_vbar
+KEEP_PAGER thread_init_vbar
 
 /*
  * Below are low level routines handling entry and return from user mode.
@@ -246,9 +237,9 @@ DECLARE_KEEP_PAGER thread_init_vbar
  * returning by restoring the registers saved by thread_enter_user_mode().
  *
  * There's three ways for thread_enter_user_mode() to return to caller,
- * user TA calls _utee_return, user TA calls _utee_panic or through an abort.
+ * user TA calls utee_return, user TA calls utee_panic or through an abort.
  *
- * Calls to _utee_return or _utee_panic are handled as:
+ * Calls to utee_return or utee_panic are handled as:
  * __thread_svc_handler() -> thread_svc_handler() ->tee_svc_do_call() which
  * calls syscall_return() or syscall_panic().
  *
@@ -277,6 +268,7 @@ DECLARE_KEEP_PAGER thread_init_vbar
  * This function depends on being called with exceptions masked.
  */
 FUNC __thread_enter_user_mode , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	/*
 	 * Save all registers to allow syscall_return() to resume execution
@@ -306,6 +298,7 @@ UNWIND(	.cantunwind)
 	ldm	r0, {r0-r12}
 
 	b	eret_to_user_mode
+UNWIND(	.fnend)
 END_FUNC __thread_enter_user_mode
 
 /*
@@ -314,6 +307,7 @@ END_FUNC __thread_enter_user_mode
  * See description in thread.h
  */
 FUNC thread_unwind_user_mode , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	/* Match push {r1, r2, r4, r5} in thread_enter_user_mode() */
 	pop	{r4-r7}
@@ -327,6 +321,7 @@ UNWIND(	.cantunwind)
 
 	/* Match push {r4-r12,lr} in thread_enter_user_mode() */
 	pop     {r4-r12,pc}
+UNWIND(	.fnend)
 END_FUNC thread_unwind_user_mode
 
 	.macro maybe_restore_mapping
@@ -362,7 +357,7 @@ END_FUNC thread_unwind_user_mode
 		 * Since the translation table could reside above 4GB we'll
 		 * have to use 64-bit arithmetics.
 		 */
-		subs	r0, r0, #CORE_MMU_BASE_TABLE_OFFSET
+		subs	r0, r0, #CORE_MMU_L1_TBL_OFFSET
 		sbc	r1, r1, #0
 #endif
 		bic	r1, r1, #BIT(TTBR_ASID_SHIFT - 32)
@@ -379,9 +374,9 @@ END_FUNC thread_unwind_user_mode
 		write_contextidr r0
 		isb
 #ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-		read_ttbcr r0
-		bic	r0, r0, #TTBCR_PD1
-		write_ttbcr r0
+		read_ttbr1 r0
+		sub	r0, r0, #CORE_MMU_L1_TBL_OFFSET
+		write_ttbr1 r0
 		isb
 #endif
 
@@ -509,21 +504,6 @@ END_FUNC thread_unwind_user_mode
 	write_iciallu
 #endif
 
-	/*
-	 * Use SP_abt to update core local flags.
-	 * flags = (flags << THREAD_CLF_SAVED_SHIFT) | THREAD_CLF_TMP;
-	 */
-	cps     #CPSR_MODE_ABT
-	ldr     r1, [sp, #THREAD_CORE_LOCAL_FLAGS]
-	lsl     r1, r1, #THREAD_CLF_SAVED_SHIFT
-	orr     r1, r1, #THREAD_CLF_TMP
-	str     r1, [sp, #THREAD_CORE_LOCAL_FLAGS]
-	.ifc    \mode\(),fiq
-	cps     #CPSR_MODE_FIQ
-	.else
-	cps     #CPSR_MODE_IRQ
-	.endif
-
 	mov	r0, #THREAD_FLAGS_EXIT_ON_FOREIGN_INTR
 	mrs	r1, spsr
 	pop	{r2}
@@ -542,7 +522,10 @@ END_FUNC thread_unwind_user_mode
 	b	thread_foreign_intr_exit
 .endm
 
-FUNC thread_excp_vect , :, align=32
+	.section .text.thread_excp_vect
+        .align	5
+FUNC thread_excp_vect , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	b	.			/* Reset			*/
 	b	__thread_und_handler	/* Undefined instruction	*/
@@ -578,9 +561,9 @@ UNWIND(	.cantunwind)
 		cpsid   aif		/* 0:000 FIQ			*/
 	.endm
 
-        .balign	32
-	.global thread_excp_vect_wa_a15_spectre_v2
-thread_excp_vect_wa_a15_spectre_v2:
+        .align	5
+	.global thread_excp_vect_workaround_a15
+thread_excp_vect_workaround_a15:
 	vector_prologue_spectre
 	write_tpidrprw r0
 	mrs	r0, spsr
@@ -601,9 +584,9 @@ thread_excp_vect_wa_a15_spectre_v2:
 	isb
 	b	1f
 
-        .balign	32
-	.global thread_excp_vect_wa_spectre_v2
-thread_excp_vect_wa_spectre_v2:
+        .align	5
+	.global thread_excp_vect_workaround
+thread_excp_vect_workaround:
 	vector_prologue_spectre
 	write_tpidrprw r0
 	mrs	r0, spsr
@@ -814,7 +797,7 @@ eret_to_user_mode:
 #ifdef CFG_WITH_LPAE
 	read_ttbr0_64bit r0, r1
 #ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-	add	r0, r0, #CORE_MMU_BASE_TABLE_OFFSET
+	add	r0, r0, #CORE_MMU_L1_TBL_OFFSET
 #endif
 	/* switch to user ASID */
 	orr	r1, r1, #BIT(TTBR_ASID_SHIFT - 32)
@@ -822,9 +805,9 @@ eret_to_user_mode:
 	isb
 #else /*!CFG_WITH_LPAE*/
 #ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-	read_ttbcr r0
-	orr	r0, r0, #TTBCR_PD1
-	write_ttbcr r0
+	read_ttbr1 r0
+	add	r0, r0, #CORE_MMU_L1_TBL_OFFSET
+	write_ttbr1 r0
 	isb
 #endif
 	read_contextidr r0
@@ -873,20 +856,18 @@ icache_inv_user_range:
 
 #ifdef CFG_WITH_LPAE
 	read_ttbr0_64bit r6, r7	/* These registers must be preseved */
+#ifdef CFG_CORE_UNMAP_CORE_AT_EL0
+	add	r2, r6, #CORE_MMU_L1_TBL_OFFSET
+#endif
 	/* switch to user ASID */
 	orr	r3, r7, #BIT(TTBR_ASID_SHIFT - 32)
-#ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-	add	r2, r6, #CORE_MMU_BASE_TABLE_OFFSET
 	write_ttbr0_64bit r2, r3
-#else
-	write_ttbr0_64bit r6, r3
-#endif
 	isb
 #else /*!CFG_WITH_LPAE*/
 #ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-	read_ttbcr r6	/* This register must be preserved */
-	orr	r2, r6, #TTBCR_PD1
-	write_ttbcr r2
+	read_ttbr1 r6		/* This register must be preserved */
+	add	r2, r6, #CORE_MMU_L1_TBL_OFFSET
+	write_ttbr1 r2
 	isb
 #endif /*CFG_CORE_UNMAP_CORE_AT_EL0*/
 	read_contextidr r7	/* This register must be preserved */
@@ -927,7 +908,7 @@ icache_inv_user_range:
 	write_contextidr r7
 	isb
 #ifdef CFG_CORE_UNMAP_CORE_AT_EL0
-	write_ttbcr r6
+	write_ttbr1 r6
 	isb
 #endif
 #endif /*!CFG_WITH_LPAE*/
@@ -953,6 +934,7 @@ icache_inv_user_range:
 	 * thread_excp_vect_end label.
 	 */
 	.pool
+UNWIND(	.fnend)
 	.global thread_excp_vect_end
 thread_excp_vect_end:
 END_FUNC thread_excp_vect

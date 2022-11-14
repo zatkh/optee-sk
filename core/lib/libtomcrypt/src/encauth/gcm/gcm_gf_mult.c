@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /**
    @file gcm_gf_mult.c
@@ -7,7 +14,7 @@
 */
 #include "tomcrypt_private.h"
 
-#if defined(LTC_GCM_TABLES) || defined(LTC_LRW_TABLES) || (defined(LTC_GCM_MODE) && defined(LTC_FAST))
+#if defined(LTC_GCM_TABLES) || defined(LTC_LRW_TABLES) || ((defined(LTC_GCM_MODE) || defined(LTC_GCM_MODE)) && defined(LTC_FAST))
 
 /* this is x*2^128 mod p(x) ... the results are 16 bytes each stored in a packed format.  Since only the
  * lower 16 bits are not zero'ed I removed the upper 14 bytes */
@@ -52,7 +59,7 @@ const unsigned char gcm_shift_table[256*2] = {
 
 #ifndef LTC_FAST
 /* right shift */
-static void s_gcm_rightshift(unsigned char *a)
+static void _gcm_rightshift(unsigned char *a)
 {
    int x;
    for (x = 15; x > 0; x--) {
@@ -86,7 +93,7 @@ void gcm_gf_mult(const unsigned char *a, const unsigned char *b, unsigned char *
           }
        }
        z     = V[15] & 0x01;
-       s_gcm_rightshift(V);
+       _gcm_rightshift(V);
        V[0] ^= poly[z];
    }
    XMEMCPY(c, Z, 16);
@@ -206,4 +213,8 @@ void gcm_gf_mult(const unsigned char *a, const unsigned char *b, unsigned char *
 #endif
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */
 

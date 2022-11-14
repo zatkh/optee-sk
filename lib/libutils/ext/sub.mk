@@ -9,5 +9,6 @@ srcs-y += nex_strdup.c
 srcs-y += consttime_memcmp.c
 srcs-y += memzero_explicit.c
 
-subdirs-y += arch/$(ARCH)
+subdirs-$(arch_arm) += arch/$(ARCH)
+subdirs-$(arch_x64) += arch/$(ARCH)
 subdirs-y += ftrace

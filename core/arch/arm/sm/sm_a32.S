@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2016-2020, Linaro Limited
+ * Copyright (c) 2016, Linaro Limited
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 
@@ -9,6 +9,7 @@
 #include <asm.S>
 #include <generated/asm-defines.h>
 #include <keep.h>
+#include <kernel/unwind.h>
 #include <sm/optee_smc.h>
 #include <sm/sm.h>
 #include <sm/teesmc_opteed.h>
@@ -26,6 +27,7 @@
 	.endm
 
 FUNC sm_save_unbanked_regs , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	/* User mode registers has to be saved from system mode */
 	cps	#CPSR_MODE_SYS
@@ -49,6 +51,7 @@ UNWIND(	.cantunwind)
 #endif
 	cps	#CPSR_MODE_MON
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC sm_save_unbanked_regs
 
 	.macro restore_regs mode
@@ -61,6 +64,7 @@ END_FUNC sm_save_unbanked_regs
 
 /* Restores the mode specific registers */
 FUNC sm_restore_unbanked_regs , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	/* User mode registers has to be saved from system mode */
 	cps	#CPSR_MODE_SYS
@@ -84,6 +88,7 @@ UNWIND(	.cantunwind)
 #endif
 	cps	#CPSR_MODE_MON
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC sm_restore_unbanked_regs
 
 /*
@@ -94,6 +99,7 @@ END_FUNC sm_restore_unbanked_regs
  * Async abort has to be masked while using stack_tmp.
  */
 LOCAL_FUNC sm_smc_entry , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	srsdb	sp!, #CPSR_MODE_MON
 	push	{r0-r7}
@@ -194,6 +200,7 @@ UNWIND(	.cantunwind)
 .sm_exit:
 	pop	{r0-r7}
 	rfefd	sp!
+UNWIND(	.fnend)
 END_FUNC sm_smc_entry
 
 /*
@@ -204,6 +211,7 @@ END_FUNC sm_smc_entry
  * from FIQ.
  */
 LOCAL_FUNC sm_fiq_entry , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	/* FIQ has a +4 offset for lr compared to preferred return address */
 	sub	lr, lr, #4
@@ -233,7 +241,7 @@ UNWIND(	.cantunwind)
 	stm	r0!, {r8-r12}
 
 	/* Set FIQ entry */
-	ldr	r0, =vector_fiq_entry
+	ldr	r0, =(thread_vector_table + THREAD_VECTOR_TABLE_FIQ_ENTRY)
 	str	r0, [sp, #(SM_CTX_SEC + SM_SEC_CTX_MON_LR)]
 
 	/* Restore secure context */
@@ -243,9 +251,13 @@ UNWIND(	.cantunwind)
 	add	sp, sp, #(SM_CTX_SEC + SM_SEC_CTX_MON_LR)
 
 	rfefd	sp!
+UNWIND(	.fnend)
 END_FUNC sm_fiq_entry
 
-LOCAL_FUNC sm_vect_table , :, align=32
+	.section .text.sm_vect_table
+        .align	5
+LOCAL_FUNC sm_vect_table , :
+UNWIND(	.fnstart)
 UNWIND(	.cantunwind)
 	b	.		/* Reset			*/
 	b	.		/* Undefined instruction	*/
@@ -255,7 +267,6 @@ UNWIND(	.cantunwind)
 	b	.		/* Reserved			*/
 	b	.		/* IRQ				*/
 	b	sm_fiq_entry	/* FIQ				*/
-END_FUNC sm_vect_table
 
 #ifdef CFG_CORE_WORKAROUND_SPECTRE_BP
 	.macro vector_prologue_spectre
@@ -278,8 +289,8 @@ END_FUNC sm_vect_table
 		nop			/* 0:000 FIQ			*/
 	.endm
 
-LOCAL_FUNC sm_vect_table_a15 , :, align=32
-UNWIND(	.cantunwind)
+	.align 5
+sm_vect_table_a15:
 	vector_prologue_spectre
 	/*
 	 * Invalidate the branch predictor for the current processor.
@@ -295,11 +306,9 @@ UNWIND(	.cantunwind)
 	write_iciallu
 	isb
 	b	1f
-END_FUNC sm_vect_table_a15
 
-
-LOCAL_FUNC sm_vect_table_bpiall , :, align=32
-UNWIND(	.cantunwind)
+	.align 5
+sm_vect_table_bpiall:
 	vector_prologue_spectre
 	/* Invalidate the branch predictor for the current processor. */
 	write_bpiall
@@ -324,11 +333,13 @@ UNWIND(	.cantunwind)
 
 	/* unhandled exception */
 	b	.
-END_FUNC sm_vect_table_bpiall
 #endif /*!CFG_CORE_WORKAROUND_SPECTRE_BP*/
+UNWIND(	.fnend)
+END_FUNC sm_vect_table
 
 /* void sm_init(vaddr_t stack_pointer); */
 FUNC sm_init , :
+UNWIND(	.fnstart)
 	/* Set monitor stack */
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_MON
@@ -406,7 +417,7 @@ FUNC sm_init , :
 
 	bx	lr
 END_FUNC sm_init
-DECLARE_KEEP_PAGER sm_init
+KEEP_PAGER sm_init
 
 
 /* struct sm_nsec_ctx *sm_get_nsec_ctx(void); */

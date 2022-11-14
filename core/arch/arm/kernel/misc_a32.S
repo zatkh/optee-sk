@@ -7,18 +7,21 @@
 #include <asm.S>
 #include <arm.h>
 #include <arm32_macros.S>
+#include <kernel/unwind.h>
 #include <platform_config.h>
 
 
 /* size_t __get_core_pos(void); */
 FUNC __get_core_pos , : , .identity_map
+UNWIND(	.fnstart)
 	read_mpidr r0
 	b get_core_pos_mpidr
+UNWIND(	.fnend)
 END_FUNC __get_core_pos
 
 /* size_t get_core_pos_mpidr(uint32_t mpidr); */
-/* Let platforms override this if needed */
-WEAK_FUNC get_core_pos_mpidr , :
+FUNC get_core_pos_mpidr , :
+UNWIND(	.fnstart)
 	mov	r3, r0
 
 	/*
@@ -53,13 +56,18 @@ WEAK_FUNC get_core_pos_mpidr , :
 #endif
 
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC get_core_pos_mpidr
+
+/* Let platforms override this if needed */
+.weak get_core_pos_mpidr
 
 /*
  * uint32_t temp_set_mode(int cpu_mode)
  *   returns cpsr to be set
  */
 LOCAL_FUNC temp_set_mode , :
+UNWIND(	.fnstart)
 	mov	r1, r0
 	cmp	r1, #CPSR_MODE_USR	/* update mode: usr -> sys */
 	moveq	r1, #CPSR_MODE_SYS
@@ -68,10 +76,12 @@ LOCAL_FUNC temp_set_mode , :
 	bic	r0, #CPSR_MODE_MASK	/* clear mode */
 	orr	r0, r1			/* set expected mode */
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC temp_set_mode
 
 /* uint32_t read_mode_sp(int cpu_mode) */
 FUNC read_mode_sp , :
+UNWIND(	.fnstart)
 	push	{r4, lr}
 UNWIND(	.save	{r4, lr})
 	mrs	r4, cpsr		/* save cpsr */
@@ -80,10 +90,12 @@ UNWIND(	.save	{r4, lr})
 	mov	r0, sp			/* get the function result */
 	msr	cpsr, r4		/* back to the old mode */
 	pop	{r4, pc}
+UNWIND(	.fnend)
 END_FUNC read_mode_sp
 
 /* uint32_t read_mode_lr(int cpu_mode) */
 FUNC read_mode_lr , :
+UNWIND(	.fnstart)
 	push	{r4, lr}
 UNWIND(	.save	{r4, lr})
 	mrs	r4, cpsr		/* save cpsr */
@@ -92,17 +104,5 @@ UNWIND(	.save	{r4, lr})
 	mov	r0, lr			/* get the function result */
 	msr	cpsr, r4		/* back to the old mode */
 	pop	{r4, pc}
+UNWIND(	.fnend)
 END_FUNC read_mode_lr
-
-/* void wait_cycles(unsigned long cycles) */
-FUNC wait_cycles , :
-	/* Divide by 4 since each loop will take 4 cycles to complete */
-	lsrs	r0, r0, #2
-	bxeq	lr
-loop:
-	subs	r0, r0, #1
-	nop
-	bne	loop
-
-	bx lr
-END_FUNC wait_cycles

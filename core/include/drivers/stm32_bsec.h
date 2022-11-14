@@ -1,12 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Copyright (c) 2017-2020, STMicroelectronics
+ * Copyright (c) 2017-2019, STMicroelectronics
  */
 
 #ifndef __STM32_BSEC_H
 #define __STM32_BSEC_H
 
-#include <compiler.h>
 #include <stdint.h>
 #include <tee_api.h>
 
@@ -47,15 +46,7 @@ TEE_Result stm32_bsec_write_otp(uint32_t value, uint32_t otp_id);
  * @otp_id: OTP number.
  * Return a TEE_Result compliant return value
  */
-#ifdef CFG_STM32_BSEC_WRITE
 TEE_Result stm32_bsec_program_otp(uint32_t value, uint32_t otp_id);
-#else
-static inline TEE_Result stm32_bsec_program_otp(uint32_t value __unused,
-						uint32_t otp_id __unused)
-{
-	return TEE_ERROR_NOT_SUPPORTED;
-}
-#endif
 
 /*
  * Permanent lock of OTP in SAFMEM
@@ -69,14 +60,7 @@ TEE_Result stm32_bsec_permanent_lock_otp(uint32_t otp_id);
  * @value: Value to write
  * Return a TEE_Result compliant return value
  */
-#ifdef CFG_STM32_BSEC_WRITE
 TEE_Result stm32_bsec_write_debug_conf(uint32_t value);
-#else
-static inline TEE_Result stm32_bsec_write_debug_conf(uint32_t value __unused)
-{
-	return TEE_ERROR_NOT_SUPPORTED;
-}
-#endif
 
 /* Return debug configuration read from BSEC */
 uint32_t stm32_bsec_read_debug_conf(void);
@@ -84,62 +68,62 @@ uint32_t stm32_bsec_read_debug_conf(void);
 /*
  * Write shadow-read lock
  * @otp_id: OTP number
- * Return a TEE_Result compliant return value
+ * @value: Value to write in the register, must be non null
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_set_sr_lock(uint32_t otp_id);
+bool stm32_bsec_write_sr_lock(uint32_t otp_id, uint32_t value);
 
 /*
  * Read shadow-read lock
  * @otp_id: OTP number
- * @locked: (out) true if shadow-read is locked, false if not locked.
- * Return a TEE_Result compliant return value
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_read_sr_lock(uint32_t otp_id, bool *locked);
+bool stm32_bsec_read_sr_lock(uint32_t otp_id);
 
 /*
  * Write shadow-write lock
  * @otp_id: OTP number
- * Return a TEE_Result compliant return value
+ * @value: Value to write in the register, must be non null
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_set_sw_lock(uint32_t otp_id);
+bool stm32_bsec_write_sw_lock(uint32_t otp_id, uint32_t value);
 
 /*
  * Read shadow-write lock
  * @otp_id: OTP number
- * @locked: (out) true if shadow-write is locked, false if not locked.
- * Return a TEE_Result compliant return value
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_read_sw_lock(uint32_t otp_id, bool *locked);
+bool stm32_bsec_read_sw_lock(uint32_t otp_id);
 
 /*
  * Write shadow-program lock
  * @otp_id: OTP number
- * Return a TEE_Result compliant return value
+ * @value: Value to write in the register, must be non null
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_set_sp_lock(uint32_t otp_id);
+bool stm32_bsec_write_sp_lock(uint32_t otp_id, uint32_t value);
 
 /*
  * Read shadow-program lock
  * @otp_id: OTP number
- * @locked: (out) true if shadow-program is locked, false if not locked.
- * Return a TEE_Result compliant return value
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_read_sp_lock(uint32_t otp_id, bool *locked);
+bool stm32_bsec_read_sp_lock(uint32_t otp_id);
 
 /*
  * Read permanent lock status
  * @otp_id: OTP number
- * @locked: (out) true if permanent lock is locked, false if not locked.
- * Return a TEE_Result compliant return value
+ * Return true if OTP is locked, else false
  */
-TEE_Result stm32_bsec_read_permanent_lock(uint32_t otp_id, bool *locked);
+bool stm32_bsec_wr_lock(uint32_t otp_id);
 
 /*
  * Lock Upper OTP or Global programming or debug enable
  * @service: Service to lock, see header file
+ * @value: Value to write must always set to 1 (only use for debug purpose)
  * Return a TEE_Result compliant return value
  */
-TEE_Result stm32_bsec_otp_lock(uint32_t service);
+TEE_Result stm32_bsec_otp_lock(uint32_t service, uint32_t value);
 
 /*
  * Return true if non-secure world is allowed to read the target OTP

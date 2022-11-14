@@ -117,9 +117,11 @@ static void get_mpi(mbedtls_mpi *mpi, const TEE_BigInt *bigInt)
 
 void TEE_BigIntInit(TEE_BigInt *bigInt, uint32_t len)
 {
+	memset(bigInt, 0, TEE_BigIntSizeInU32(len) * sizeof(uint32_t));
+
 	struct bigint_hdr *hdr = (struct bigint_hdr *)bigInt;
 
-	memset(bigInt, 0, len * sizeof(uint32_t));
+
 	hdr->sign = 1;
 	if ((len - BIGINT_HDR_SIZE_IN_U32) > MBEDTLS_MPI_MAX_LIMBS)
 		API_PANIC("Too large bigint");
@@ -352,6 +354,9 @@ static void bigint_binary_mod(TEE_BigInt *dest, const TEE_BigInt *op1,
 			      int (*func)(mbedtls_mpi *X, const mbedtls_mpi *A,
 					  const mbedtls_mpi *B))
 {
+	if (TEE_BigIntCmpS32(n, 2) < 0)
+		API_PANIC("Modulus is too short");
+
 	mbedtls_mpi mpi_dest;
 	mbedtls_mpi mpi_op1;
 	mbedtls_mpi mpi_op2;
@@ -359,9 +364,6 @@ static void bigint_binary_mod(TEE_BigInt *dest, const TEE_BigInt *op1,
 	mbedtls_mpi *pop1 = &mpi_op1;
 	mbedtls_mpi *pop2 = &mpi_op2;
 	mbedtls_mpi mpi_t;
-
-	if (TEE_BigIntCmpS32(n, 2) < 0)
-		API_PANIC("Modulus is too short");
 
 	get_mpi(&mpi_dest, dest);
 	get_mpi(&mpi_n, n);
@@ -390,7 +392,6 @@ static void bigint_binary_mod(TEE_BigInt *dest, const TEE_BigInt *op1,
 	if (pop2 == &mpi_op2)
 		mbedtls_mpi_free(&mpi_op2);
 	mbedtls_mpi_free(&mpi_t);
-	mbedtls_mpi_free(&mpi_n);
 }
 
 void TEE_BigIntAdd(TEE_BigInt *dest, const TEE_BigInt *op1,
@@ -486,10 +487,8 @@ void TEE_BigIntDiv(TEE_BigInt *dest_q, TEE_BigInt *dest_r,
 
 	MPI_CHECK(mbedtls_mpi_div_mpi(&mpi_dest_q, &mpi_dest_r, pop1, pop2));
 
-	if (dest_q)
-		MPI_CHECK(copy_mpi_to_bigint(&mpi_dest_q, dest_q));
-	if (dest_r)
-		MPI_CHECK(copy_mpi_to_bigint(&mpi_dest_r, dest_r));
+	MPI_CHECK(copy_mpi_to_bigint(&mpi_dest_q, dest_q));
+	MPI_CHECK(copy_mpi_to_bigint(&mpi_dest_r, dest_r));
 	mbedtls_mpi_free(&mpi_dest_q);
 	mbedtls_mpi_free(&mpi_dest_r);
 	if (pop1 == &mpi_op1)
@@ -533,13 +532,13 @@ void TEE_BigIntSquareMod(TEE_BigInt *dest, const TEE_BigInt *op,
 void TEE_BigIntInvMod(TEE_BigInt *dest, const TEE_BigInt *op,
 		      const TEE_BigInt *n)
 {
+	if (TEE_BigIntCmpS32(n, 2) < 0 || TEE_BigIntCmpS32(op, 0) == 0)
+		API_PANIC("too small modulus or trying to invert zero");
+
 	mbedtls_mpi mpi_dest;
 	mbedtls_mpi mpi_op;
 	mbedtls_mpi mpi_n;
 	mbedtls_mpi *pop = &mpi_op;
-
-	if (TEE_BigIntCmpS32(n, 2) < 0 || TEE_BigIntCmpS32(op, 0) == 0)
-		API_PANIC("too small modulus or trying to invert zero");
 
 	get_mpi(&mpi_dest, dest);
 	get_mpi(&mpi_n, n);
@@ -711,7 +710,9 @@ void TEE_BigIntComputeExtendedGcd(TEE_BigInt *gcd, TEE_BigInt *u,
 		get_mpi(&mpi_op2, op2);
 
 	if (!u && !v) {
-		MPI_CHECK(mbedtls_mpi_gcd(&mpi_gcd_res, &mpi_op1, pop2));
+		if (gcd)
+			MPI_CHECK(mbedtls_mpi_gcd(&mpi_gcd_res, &mpi_op1,
+						  pop2));
 	} else {
 		mbedtls_mpi mpi_u;
 		mbedtls_mpi mpi_v;
@@ -754,7 +755,7 @@ void TEE_BigIntComputeExtendedGcd(TEE_BigInt *gcd, TEE_BigInt *u,
 
 static int rng_read(void *ignored __unused, unsigned char *buf, size_t blen)
 {
-	if (_utee_cryp_random_number_generate(buf, blen))
+	if (utee_cryp_random_number_generate(buf, blen))
 		return MBEDTLS_ERR_MPI_FILE_IO_ERROR;
 	return 0;
 }

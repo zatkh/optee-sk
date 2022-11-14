@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright 2017-2019, 2021 NXP
+ * Copyright 2017-2019 NXP
  *
  * Brief   CAAM Configuration.
  */
@@ -9,8 +9,7 @@
 #include <caam_hal_ctrl.h>
 #include <caam_hal_jr.h>
 #include <caam_jr.h>
-#include <config.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <mm/core_memprot.h>
 #include <registers/jr_regs.h>
 
@@ -30,10 +29,20 @@ enum caam_status caam_hal_cfg_get_conf(struct caam_jrcfg *jrcfg)
 		caam_hal_cfg_get_ctrl_dt(fdt, &ctrl_base);
 
 	if (!ctrl_base) {
-		ctrl_base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC,
-							  CAAM_BASE, CAAM_SIZE);
+		ctrl_base = (vaddr_t)phys_to_virt(CAAM_BASE, MEM_AREA_IO_SEC);
 		if (!ctrl_base) {
-			EMSG("Unable to map CAAM Registers");
+			if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, CAAM_BASE,
+						  CORE_MMU_PGDIR_SIZE)) {
+				EMSG("Unable to map CAAM Registers");
+				goto exit_get_conf;
+			}
+
+			ctrl_base = (vaddr_t)phys_to_virt(CAAM_BASE,
+							  MEM_AREA_IO_SEC);
+		}
+
+		if (!ctrl_base) {
+			EMSG("Unable to get the CAAM Base address");
 			goto exit_get_conf;
 		}
 	}
@@ -52,13 +61,12 @@ enum caam_status caam_hal_cfg_get_conf(struct caam_jrcfg *jrcfg)
 		jrcfg->offset = (CFG_JR_INDEX + 1) * JRX_BLOCK_SIZE;
 		jrcfg->it_num = CFG_JR_INT;
 
-		if (IS_ENABLED(CFG_NXP_CAAM_RUNTIME_JR) &&
-		    !is_embedded_dt(fdt)) {
-			if (fdt) {
-				/* Ensure Secure Job Ring is secure in DTB */
-				caam_hal_cfg_disable_jobring_dt(fdt, jrcfg);
-			}
+#ifdef CFG_NXP_CAAM_RUNTIME_JR
+		if (fdt) {
+			/* Ensure Secure Job Ring is secure only into DTB */
+			caam_hal_cfg_disable_jobring_dt(fdt, jrcfg);
 		}
+#endif
 	}
 
 	jrcfg->nb_jobs = NB_JOBS_QUEUE;
@@ -70,7 +78,7 @@ exit_get_conf:
 	return retstatus;
 }
 
-void __weak caam_hal_cfg_setup_nsjobring(struct caam_jrcfg *jrcfg)
+void caam_hal_cfg_setup_nsjobring(struct caam_jrcfg *jrcfg)
 {
 	enum caam_status status = CAAM_FAILURE;
 	paddr_t jr_offset = 0;
@@ -83,13 +91,9 @@ void __weak caam_hal_cfg_setup_nsjobring(struct caam_jrcfg *jrcfg)
 		/*
 		 * When the Cryptographic driver is enabled, keep the
 		 * Secure Job Ring don't release it.
-		 * But save the configuration to restore it when
-		 * device reset after suspend.
 		 */
-		if (jr_offset == jrcfg->offset) {
-			caam_hal_jr_prepare_backup(jrcfg->base, jr_offset);
+		if (jr_offset == jrcfg->offset)
 			continue;
-		}
 #endif
 		status = caam_hal_jr_setowner(jrcfg->base, jr_offset,
 					      JROWN_ARM_NS);

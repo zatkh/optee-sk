@@ -30,8 +30,11 @@
 #include <asm.S>
 #include <arm.h>
 #include <arm32_macros.S>
+#include <kernel/unwind.h>
 
 FUNC plat_cpu_reset_early , :
+UNWIND(	.fnstart)
+
         /* NSACR configuration */
 	read_nsacr  r0
 	orr     r0, r0, #NSACR_CP10
@@ -45,4 +48,6 @@ FUNC plat_cpu_reset_early , :
 	write_actlr  r0
 
 	bx	lr
+
+UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early

@@ -3,16 +3,19 @@
  * Copyright (c) 2017, Linaro Limited
  */
 
-#include <compiler.h>
 #include <console.h>
+#include <compiler.h>
 #include <drivers/serial.h>
-#include <kernel/dt.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/panic.h>
-#include <libfdt.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string_ext.h>
+
+#ifdef CFG_DT
+#include <kernel/dt.h>
+#include <libfdt.h>
+#endif
 
 static struct serial_chip *serial_console __nex_bss;
 
@@ -42,12 +45,10 @@ void register_serial_console(struct serial_chip *chip)
 #ifdef CFG_DT
 static int find_chosen_node(void *fdt)
 {
-	int offset = 0;
-
 	if (!fdt)
 		return -1;
 
-	offset = fdt_path_offset(fdt, "/secure-chosen");
+	int offset = fdt_path_offset(fdt, "/secure-chosen");
 
 	if (offset < 0)
 		offset = fdt_path_offset(fdt, "/chosen");
@@ -126,12 +127,12 @@ void configure_console_from_dt(void)
 	void *fdt;
 	int offs;
 
-	fdt = get_dt();
+	fdt = get_external_dt();
 	if (get_console_node_from_dt(fdt, &offs, &uart, &parms))
 		return;
 
 	dt_drv = dt_find_compatible_driver(fdt, offs);
-	if (!dt_drv || dt_drv->type != DT_DRIVER_UART)
+	if (!dt_drv)
 		goto out;
 
 	sdrv = (const struct serial_driver *)dt_drv->driver;

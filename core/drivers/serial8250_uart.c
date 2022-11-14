@@ -34,7 +34,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct serial8250_uart_data *pd =
 		container_of(chip, struct serial8250_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, SERIAL8250_UART_REG_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void serial8250_uart_flush(struct serial_chip *chip)
@@ -84,7 +84,7 @@ static const struct serial_ops serial8250_uart_ops = {
 	.have_rx_data = serial8250_uart_have_rx_data,
 	.putc = serial8250_uart_putc,
 };
-DECLARE_KEEP_PAGER(serial8250_uart_ops);
+KEEP_PAGER(serial8250_uart_ops);
 
 void serial8250_uart_init(struct serial8250_uart_data *pd, paddr_t base,
 			  uint32_t __unused uart_clk,
@@ -125,7 +125,7 @@ static int serial8250_uart_dev_init(struct serial_chip *chip,
 	if (parms && parms[0])
 		IMSG("serial8250_uart: device parameters ignored (%s)", parms);
 
-	if (dt_map_dev(fdt, offs, &vbase, &size, DT_MAP_AUTO) < 0)
+	if (dt_map_dev(fdt, offs, &vbase, &size) < 0)
 		return -1;
 
 	if (size < SERIAL8250_UART_REG_SIZE) {
@@ -158,9 +158,8 @@ static const struct dt_device_match serial8250_match_table[] = {
 	{ 0 }
 };
 
-DEFINE_DT_DRIVER(serial8250_dt_driver) = {
+const struct dt_driver serial8250_dt_driver __dt_driver = {
 	.name = "serial8250_uart",
-	.type = DT_DRIVER_UART,
 	.match_table = serial8250_match_table,
 	.driver = &serial8250_driver,
 };

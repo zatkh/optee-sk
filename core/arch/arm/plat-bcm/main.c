@@ -7,13 +7,25 @@
 #include <console.h>
 #include <drivers/gic.h>
 #include <drivers/serial8250_uart.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/interrupt.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <mm/core_memprot.h>
 #include <mm/tee_pager.h>
 #include <platform_config.h>
 #include <stdint.h>
+#include <tee/entry_fast.h>
+#include <tee/entry_std.h>
+
+static const struct thread_handlers handlers = {
+	.cpu_on = cpu_on_handler,
+	.cpu_off = pm_do_nothing,
+	.cpu_suspend = pm_do_nothing,
+	.cpu_resume = pm_do_nothing,
+	.system_off = pm_do_nothing,
+	.system_reset = pm_do_nothing,
+};
 
 static struct gic_data gic_data;
 struct serial8250_uart_data console_data;
@@ -56,6 +68,11 @@ register_phys_mem(MEM_AREA_IO_NSEC, CFG_BCM_ELOG_AP_UART_LOG_BASE,
 register_phys_mem(MEM_AREA_RAM_NSEC, CFG_BCM_ELOG_BASE, CFG_BCM_ELOG_SIZE);
 #endif
 
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
+
 void plat_trace_ext_puts(const char *str)
 {
 	const char *p;
@@ -81,6 +98,14 @@ void itr_core_handler(void)
 
 void main_init_gic(void)
 {
-	gic_init_base_addr(&gic_data, 0, GICD_BASE);
+	vaddr_t gicd_base;
+
+	gicd_base = core_mmu_get_va(GICD_BASE, MEM_AREA_IO_SEC);
+
+	if (!gicd_base)
+		panic();
+
+	gic_init_base_addr(&gic_data, 0, gicd_base);
 	itr_init(&gic_data.chip);
+
 }

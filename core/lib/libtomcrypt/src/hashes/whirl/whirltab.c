@@ -1,12 +1,19 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /**
    @file whirltab.c
    LTC_WHIRLPOOL tables, Tom St Denis
 */
 
-#ifdef LTC_WHIRLTAB_C
+#ifdef __LTC_WHIRLTAB_C__
 
 static const ulong64 sbox0[] = {
 CONST64(0x18186018c07830d8), CONST64(0x23238c2305af4626), CONST64(0xc6c63fc67ef991b8), CONST64(0xe8e887e8136fcdfb),
@@ -583,4 +590,8 @@ CONST64(0xca2dbf07ad5a8333),
 CONST64(0x6302aa71c81949d9),
 };
 
-#endif /* LTC_WHIRLTAB_C */
+#endif /* __LTC_WHIRLTAB_C__ */
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

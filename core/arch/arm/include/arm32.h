@@ -7,7 +7,6 @@
 #ifndef ARM32_H
 #define ARM32_H
 
-#include <compiler.h>
 #include <sys/cdefs.h>
 #include <stdint.h>
 #include <util.h>
@@ -61,7 +60,7 @@
 #define SCTLR_SPAN	BIT32(23)
 #define SCTLR_VE	BIT32(24)
 #define SCTLR_EE	BIT32(25)
-#define SCTLR_NMFI	BIT32(27)
+#define SCTLR_NMFI	BIT32(26)
 #define SCTLR_TRE	BIT32(28)
 #define SCTLR_AFE	BIT32(29)
 #define SCTLR_TE	BIT32(30)
@@ -85,20 +84,20 @@
 #define CPACR_ASEDIS	BIT32(31)
 #define CPACR_D32DIS	BIT32(30)
 #define CPACR_CP(co_proc, access)	SHIFT_U32((access), ((co_proc) * 2))
-#define CPACR_CP_ACCESS_DENIED		U(0x0)
-#define CPACR_CP_ACCESS_PL1_ONLY	U(0x1)
-#define CPACR_CP_ACCESS_FULL		U(0x3)
+#define CPACR_CP_ACCESS_DENIED		0x0
+#define CPACR_CP_ACCESS_PL1_ONLY	0x1
+#define CPACR_CP_ACCESS_FULL		0x3
 
 
 #define DACR_DOMAIN(num, perm)		SHIFT_U32((perm), ((num) * 2))
-#define DACR_DOMAIN_PERM_NO_ACCESS	U(0x0)
-#define DACR_DOMAIN_PERM_CLIENT		U(0x1)
-#define DACR_DOMAIN_PERM_MANAGER	U(0x3)
+#define DACR_DOMAIN_PERM_NO_ACCESS	0x0
+#define DACR_DOMAIN_PERM_CLIENT		0x1
+#define DACR_DOMAIN_PERM_MANAGER	0x3
 
 #define PAR_F			BIT32(0)
 #define PAR_SS			BIT32(1)
 #define PAR_LPAE		BIT32(11)
-#define PAR_PA_SHIFT		U(12)
+#define PAR_PA_SHIFT		12
 #define PAR32_PA_MASK		(BIT32(20) - 1)
 #define PAR64_PA_MASK		(BIT64(28) - 1)
 
@@ -114,39 +113,39 @@
 #define TTBCR_PD1	BIT32(5)
 
 /* When TTBCR.EAE == 1 */
-#define TTBCR_T0SZ_SHIFT	U(0)
+#define TTBCR_T0SZ_SHIFT	0
 #define TTBCR_EPD0		BIT32(7)
-#define TTBCR_IRGN0_SHIFT	U(8)
-#define TTBCR_ORGN0_SHIFT	U(10)
-#define TTBCR_SH0_SHIFT		U(12)
-#define TTBCR_T1SZ_SHIFT	U(16)
+#define TTBCR_IRGN0_SHIFT	8
+#define TTBCR_ORGN0_SHIFT	10
+#define TTBCR_SH0_SHIFT		12
+#define TTBCR_T1SZ_SHIFT	16
 #define TTBCR_A1		BIT32(22)
 #define TTBCR_EPD1		BIT32(23)
-#define TTBCR_IRGN1_SHIFT	U(24)
-#define TTBCR_ORGN1_SHIFT	U(26)
-#define TTBCR_SH1_SHIFT		U(28)
+#define TTBCR_IRGN1_SHIFT	24
+#define TTBCR_ORGN1_SHIFT	26
+#define TTBCR_SH1_SHIFT		28
 
 /* Normal memory, Inner/Outer Non-cacheable */
-#define TTBCR_XRGNX_NC		U(0x0)
+#define TTBCR_XRGNX_NC		0x0
 /* Normal memory, Inner/Outer Write-Back Write-Allocate Cacheable */
-#define TTBCR_XRGNX_WB		U(0x1)
+#define TTBCR_XRGNX_WB		0x1
 /* Normal memory, Inner/Outer Write-Through Cacheable */
-#define TTBCR_XRGNX_WT		U(0x2)
+#define TTBCR_XRGNX_WT		0x2
 /* Normal memory, Inner/Outer Write-Back no Write-Allocate Cacheable */
-#define TTBCR_XRGNX_WBWA	U(0x3)
+#define TTBCR_XRGNX_WBWA	0x3
 
 /* Non-shareable */
-#define TTBCR_SHX_NSH		U(0x0)
+#define TTBCR_SHX_NSH		0x0
 /* Outer Shareable */
-#define TTBCR_SHX_OSH		U(0x2)
+#define TTBCR_SHX_OSH		0x2
 /* Inner Shareable */
-#define TTBCR_SHX_ISH		U(0x3)
+#define TTBCR_SHX_ISH		0x3
 
-#define TTBR_ASID_MASK		U(0xff)
-#define TTBR_ASID_SHIFT		U(48)
+#define TTBR_ASID_MASK		0xff
+#define TTBR_ASID_SHIFT		48
 
-#define TLBI_MVA_SHIFT		U(12)
-#define TLBI_ASID_MASK		U(0xff)
+#define TLBI_MVA_SHIFT		12
+#define TLBI_ASID_MASK		0xff
 
 #define FSR_LPAE		BIT32(9)
 #define FSR_WNR			BIT32(11)
@@ -158,10 +157,10 @@
 #define FSR_FS_MASK		(BIT32(10) | (BIT32(4) - 1))
 
 /* ID_PFR1 bit fields */
-#define IDPFR1_VIRT_SHIFT            U(12)
-#define IDPFR1_VIRT_MASK             SHIFT_U32(0xF, IDPFR1_VIRT_SHIFT)
-#define IDPFR1_GENTIMER_SHIFT        U(16)
-#define IDPFR1_GENTIMER_MASK         SHIFT_U32(0xF, IDPFR1_GENTIMER_SHIFT)
+#define IDPFR1_VIRT_SHIFT            12
+#define IDPFR1_VIRT_MASK             (0xF << IDPFR1_VIRT_SHIFT)
+#define IDPFR1_GENTIMER_SHIFT        16
+#define IDPFR1_GENTIMER_MASK         (0xF << IDPFR1_GENTIMER_SHIFT)
 
 #ifndef __ASSEMBLER__
 #include <generated/arm32_sysreg.h>
@@ -169,42 +168,42 @@
 #include <generated/arm32_gicv3_sysreg.h>
 #endif
 
-static inline __noprof void isb(void)
+static inline void isb(void)
 {
-	asm volatile ("isb" : : : "memory");
+	asm volatile ("isb");
 }
 
-static inline __noprof void dsb(void)
+static inline void dsb(void)
 {
-	asm volatile ("dsb" : : : "memory");
+	asm volatile ("dsb");
 }
 
-static inline __noprof void dsb_ish(void)
+static inline void dsb_ish(void)
 {
-	asm volatile ("dsb ish" : : : "memory");
+	asm volatile ("dsb ish");
 }
 
-static inline __noprof void dsb_ishst(void)
+static inline void dsb_ishst(void)
 {
-	asm volatile ("dsb ishst" : : : "memory");
+	asm volatile ("dsb ishst");
 }
 
-static inline __noprof void dmb(void)
+static inline void dmb(void)
 {
-	asm volatile ("dmb" : : : "memory");
+	asm volatile ("dmb");
 }
 
-static inline __noprof void sev(void)
+static inline void sev(void)
 {
-	asm volatile ("sev" : : : "memory");
+	asm volatile ("sev");
 }
 
-static inline __noprof void wfe(void)
+static inline void wfe(void)
 {
-	asm volatile ("wfe" : : : "memory");
+	asm volatile ("wfe");
 }
 
-static inline __noprof uint32_t read_cpsr(void)
+static inline uint32_t read_cpsr(void)
 {
 	uint32_t cpsr;
 
@@ -214,14 +213,14 @@ static inline __noprof uint32_t read_cpsr(void)
 	return cpsr;
 }
 
-static inline __noprof void write_cpsr(uint32_t cpsr)
+static inline void write_cpsr(uint32_t cpsr)
 {
 	asm volatile ("msr	cpsr_fsxc, %[cpsr]"
 			: : [cpsr] "r" (cpsr)
 	);
 }
 
-static inline __noprof uint32_t read_spsr(void)
+static inline uint32_t read_spsr(void)
 {
 	uint32_t spsr;
 
@@ -231,12 +230,12 @@ static inline __noprof uint32_t read_spsr(void)
 	return spsr;
 }
 
-static inline __noprof void wfi(void)
+static inline void wfi(void)
 {
-	asm volatile("wfi" : : : "memory");
+	asm volatile("wfi");
 }
 
-static __always_inline __noprof uint32_t read_pc(void)
+static __always_inline uint32_t read_pc(void)
 {
 	uint32_t val;
 
@@ -244,7 +243,7 @@ static __always_inline __noprof uint32_t read_pc(void)
 	return val;
 }
 
-static __always_inline __noprof uint32_t read_sp(void)
+static __always_inline uint32_t read_sp(void)
 {
 	uint32_t val;
 
@@ -252,7 +251,7 @@ static __always_inline __noprof uint32_t read_sp(void)
 	return val;
 }
 
-static __always_inline __noprof uint32_t read_lr(void)
+static __always_inline uint32_t read_lr(void)
 {
 	uint32_t val;
 
@@ -260,7 +259,7 @@ static __always_inline __noprof uint32_t read_lr(void)
 	return val;
 }
 
-static __always_inline __noprof uint32_t read_fp(void)
+static __always_inline uint32_t read_fp(void)
 {
 	uint32_t val;
 
@@ -268,7 +267,7 @@ static __always_inline __noprof uint32_t read_fp(void)
 	return val;
 }
 
-static __always_inline __noprof uint32_t read_r7(void)
+static __always_inline uint32_t read_r7(void)
 {
 	uint32_t val;
 

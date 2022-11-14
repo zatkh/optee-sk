@@ -8,16 +8,6 @@
 #include <stddef.h>
 #include <types_ext.h>
 
-/*
- * Due to bget implementation, the first memory pool registered shall have
- * a min size. Choose 1kB which is reasonable.
- */
-#define MALLOC_INITIAL_POOL_MIN_SIZE	1024
-
-void *malloc(size_t size);
-void *calloc(size_t nmemb, size_t size);
-void *realloc(void *ptr, size_t size);
-void *memalign(size_t alignment, size_t size);
 void free(void *ptr);
 
 #ifdef ENABLE_MDBG
@@ -25,8 +15,6 @@ void free(void *ptr);
 void *mdbg_malloc(const char *fname, int lineno, size_t size);
 void *mdbg_calloc(const char *fname, int lineno, size_t nmemb, size_t size);
 void *mdbg_realloc(const char *fname, int lineno, void *ptr, size_t size);
-void *mdbg_memalign(const char *fname, int lineno, size_t alignment,
-		    size_t size);
 
 void mdbg_check(int bufdump);
 
@@ -35,14 +23,17 @@ void mdbg_check(int bufdump);
 		mdbg_calloc(__FILE__, __LINE__, (nmemb), (size))
 #define realloc(ptr, size) \
 		mdbg_realloc(__FILE__, __LINE__, (ptr), (size))
-#define memalign(alignment, size) \
-		mdbg_memalign(__FILE__, __LINE__, (alignment), (size))
 
 #else
+
+void *malloc(size_t size);
+void *calloc(size_t nmemb, size_t size);
+void *realloc(void *ptr, size_t size);
 
 #define mdbg_check(x)        do { } while (0)
 
 #endif
+
 
 /*
  * Returns true if the supplied memory area is within a buffer
@@ -95,8 +86,6 @@ void nex_free(void *ptr);
 void *nex_mdbg_malloc(const char *fname, int lineno, size_t size);
 void *nex_mdbg_calloc(const char *fname, int lineno, size_t nmemb, size_t size);
 void *nex_mdbg_realloc(const char *fname, int lineno, void *ptr, size_t size);
-void *nex_mdbg_memalign(const char *fname, int lineno, size_t alignment,
-			size_t size);
 
 void nex_mdbg_check(int bufdump);
 
@@ -105,15 +94,12 @@ void nex_mdbg_check(int bufdump);
 		nex_mdbg_calloc(__FILE__, __LINE__, (nmemb), (size))
 #define nex_realloc(ptr, size) \
 		nex_mdbg_realloc(__FILE__, __LINE__, (ptr), (size))
-#define nex_memalign(alignment, size) \
-		nex_mdbg_memalign(__FILE__, __LINE__, (alignment), (size))
 
 #else /* ENABLE_MDBG */
 
 void *nex_malloc(size_t size);
 void *nex_calloc(size_t nmemb, size_t size);
 void *nex_realloc(void *ptr, size_t size);
-void *nex_memalign(size_t alignment, size_t size);
 
 #define nex_mdbg_check(x)        do { } while (0)
 
@@ -138,25 +124,7 @@ void nex_malloc_reset_stats(void);
 #define nex_malloc(size) malloc(size)
 #define nex_calloc(nmemb, size) calloc(nmemb, size)
 #define nex_realloc(ptr, size) realloc(ptr, size)
-#define nex_memalign(alignment, size) memalign(alignment, size)
 
 #endif	/* CFG_VIRTUALIZATION */
-
-struct malloc_ctx;
-void *raw_memalign(size_t hdr_size, size_t ftr_size, size_t alignment,
-		   size_t pl_size, struct malloc_ctx *ctx);
-void *raw_malloc(size_t hdr_size, size_t ftr_size, size_t pl_size,
-		 struct malloc_ctx *ctx);
-void raw_free(void *ptr, struct malloc_ctx *ctx, bool wipe);
-void *raw_calloc(size_t hdr_size, size_t ftr_size, size_t pl_nmemb,
-		 size_t pl_size, struct malloc_ctx *ctx);
-void *raw_realloc(void *ptr, size_t hdr_size, size_t ftr_size,
-		  size_t pl_size, struct malloc_ctx *ctx);
-size_t raw_malloc_get_ctx_size(void);
-void raw_malloc_init_ctx(struct malloc_ctx *ctx);
-void raw_malloc_add_pool(struct malloc_ctx *ctx, void *buf, size_t len);
-#ifdef CFG_WITH_STATS
-void raw_malloc_get_stats(struct malloc_ctx *ctx, struct malloc_stats *stats);
-#endif
 
 #endif /* MALLOC_H */

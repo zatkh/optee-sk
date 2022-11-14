@@ -19,7 +19,7 @@
 #endif
 
 /* Size needed for xtest to pass reliably on both ARM32 and ARM64 */
-#define MPI_MEMPOOL_SIZE	(46 * 1024)
+#define MPI_MEMPOOL_SIZE	(42 * 1024)
 
 /* From mbedtls/library/bignum.c */
 #define ciL		(sizeof(mbedtls_mpi_uint))	/* chars in limb  */
@@ -545,7 +545,8 @@ static int montgomery_reduce(void *a, void *b, void *c)
 	if (mbedtls_mpi_grow(&A, N->n + 1))
 		goto out;
 
-	mbedtls_mpi_montred(&A, N, *mm, &T);
+	if (mbedtls_mpi_montred(&A, N, *mm, &T))
+		goto out;
 
 	if (mbedtls_mpi_copy(a, &A))
 		goto out;
@@ -629,80 +630,80 @@ ltc_math_descriptor ltc_mp = {
 	.name = "MPI",
 	.bits_per_digit = sizeof(mbedtls_mpi_uint) * 8,
 
-	.init = init,
-	.init_size = init_size,
-	.init_copy = init_copy,
-	.deinit = deinit,
+	.init = &init,
+	.init_size = &init_size,
+	.init_copy = &init_copy,
+	.deinit = &deinit,
 
-	.neg = neg,
-	.copy = copy,
+	.neg = &neg,
+	.copy = &copy,
 
-	.set_int = set_int,
-	.get_int = get_int,
-	.get_digit = get_digit,
-	.get_digit_count = get_digit_count,
-	.compare = compare,
-	.compare_d = compare_d,
-	.count_bits = count_bits,
-	.count_lsb_bits = count_lsb_bits,
-	.twoexpt = twoexpt,
+	.set_int = &set_int,
+	.get_int = &get_int,
+	.get_digit = &get_digit,
+	.get_digit_count = &get_digit_count,
+	.compare = &compare,
+	.compare_d = &compare_d,
+	.count_bits = &count_bits,
+	.count_lsb_bits = &count_lsb_bits,
+	.twoexpt = &twoexpt,
 
-	.read_radix = read_radix,
-	.write_radix = write_radix,
-	.unsigned_size = unsigned_size,
-	.unsigned_write = unsigned_write,
-	.unsigned_read = unsigned_read,
+	.read_radix = &read_radix,
+	.write_radix = &write_radix,
+	.unsigned_size = &unsigned_size,
+	.unsigned_write = &unsigned_write,
+	.unsigned_read = &unsigned_read,
 
-	.add = add,
-	.addi = addi,
-	.sub = sub,
-	.subi = subi,
-	.mul = mul,
-	.muli = muli,
-	.sqr = sqr,
-	.mpdiv = divide,
-	.div_2 = div_2,
-	.modi = modi,
-	.gcd = gcd,
-	.lcm = lcm,
+	.add = &add,
+	.addi = &addi,
+	.sub = &sub,
+	.subi = &subi,
+	.mul = &mul,
+	.muli = &muli,
+	.sqr = &sqr,
+	.mpdiv = &divide,
+	.div_2 = &div_2,
+	.modi = &modi,
+	.gcd = &gcd,
+	.lcm = &lcm,
 
-	.mulmod = mulmod,
-	.sqrmod = sqrmod,
-	.invmod = invmod,
+	.mulmod = &mulmod,
+	.sqrmod = &sqrmod,
+	.invmod = &invmod,
 
-	.montgomery_setup = montgomery_setup,
-	.montgomery_normalization = montgomery_normalization,
-	.montgomery_reduce = montgomery_reduce,
-	.montgomery_deinit = montgomery_deinit,
+	.montgomery_setup = &montgomery_setup,
+	.montgomery_normalization = &montgomery_normalization,
+	.montgomery_reduce = &montgomery_reduce,
+	.montgomery_deinit = &montgomery_deinit,
 
-	.exptmod = exptmod,
-	.isprime = isprime,
+	.exptmod = &exptmod,
+	.isprime = &isprime,
 
 #ifdef LTC_MECC
 #ifdef LTC_MECC_FP
-	.ecc_ptmul = ltc_ecc_fp_mulmod,
+	.ecc_ptmul = &ltc_ecc_fp_mulmod,
 #else
-	.ecc_ptmul = ltc_ecc_mulmod,
+	.ecc_ptmul = &ltc_ecc_mulmod,
 #endif /* LTC_MECC_FP */
-	.ecc_ptadd = ltc_ecc_projective_add_point,
-	.ecc_ptdbl = ltc_ecc_projective_dbl_point,
-	.ecc_map = ltc_ecc_map,
+	.ecc_ptadd = &ltc_ecc_projective_add_point,
+	.ecc_ptdbl = &ltc_ecc_projective_dbl_point,
+	.ecc_map = &ltc_ecc_map,
 #ifdef LTC_ECC_SHAMIR
 #ifdef LTC_MECC_FP
-	.ecc_mul2add = ltc_ecc_fp_mul2add,
+	.ecc_mul2add = &ltc_ecc_fp_mul2add,
 #else
-	.ecc_mul2add = ltc_ecc_mul2add,
+	.ecc_mul2add = &ltc_ecc_mul2add,
 #endif /* LTC_MECC_FP */
 #endif /* LTC_ECC_SHAMIR */
 #endif /* LTC_MECC */
 
 #ifdef LTC_MRSA
-	.rsa_keygen = rsa_make_key,
-	.rsa_me = rsa_exptmod,
+	.rsa_keygen = &rsa_make_key,
+	.rsa_me = &rsa_exptmod,
 #endif
 	.addmod = addmod,
 	.submod = submod,
-	.rand = mpi_rand,
+	.rand = &mpi_rand,
 
 };
 
@@ -723,11 +724,8 @@ int32_t crypto_bignum_compare(struct bignum *a, struct bignum *b)
 
 void crypto_bignum_bn2bin(const struct bignum *from, uint8_t *to)
 {
-	const mbedtls_mpi *f = (const mbedtls_mpi *)from;
-	int rc __maybe_unused = 0;
-
-	rc = mbedtls_mpi_write_binary(f, (void *)to, mbedtls_mpi_size(f));
-	assert(!rc);
+	mbedtls_mpi_write_binary((const mbedtls_mpi *)from, (void *)to,
+				 mbedtls_mpi_size((const mbedtls_mpi *)from));
 }
 
 TEE_Result crypto_bignum_bin2bn(const uint8_t *from, size_t fromsize,
@@ -741,10 +739,7 @@ TEE_Result crypto_bignum_bin2bn(const uint8_t *from, size_t fromsize,
 
 void crypto_bignum_copy(struct bignum *to, const struct bignum *from)
 {
-	int rc __maybe_unused = 0;
-
-	rc = mbedtls_mpi_copy((mbedtls_mpi *)to, (const mbedtls_mpi *)from);
-	assert(!rc);
+	mbedtls_mpi_copy((mbedtls_mpi *)to, (const mbedtls_mpi *)from);
 }
 
 struct bignum *crypto_bignum_allocate(size_t size_bits)

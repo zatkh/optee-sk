@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -34,9 +41,9 @@ const struct ltc_hash_descriptor sha1_desc =
 #define F3(x,y,z)  (x ^ y ^ z)
 
 #ifdef LTC_CLEAN_STACK
-static int ss_sha1_compress(hash_state *md, const unsigned char *buf)
+static int _sha1_compress(hash_state *md, const unsigned char *buf)
 #else
-static int  s_sha1_compress(hash_state *md, const unsigned char *buf)
+static int  sha1_compress(hash_state *md, const unsigned char *buf)
 #endif
 {
     ulong32 a,b,c,d,e,W[80],i;
@@ -140,10 +147,10 @@ static int  s_sha1_compress(hash_state *md, const unsigned char *buf)
 }
 
 #ifdef LTC_CLEAN_STACK
-static int s_sha1_compress(hash_state *md, const unsigned char *buf)
+static int sha1_compress(hash_state *md, const unsigned char *buf)
 {
    int err;
-   err = ss_sha1_compress(md, buf);
+   err = _sha1_compress(md, buf);
    burn_stack(sizeof(ulong32) * 87);
    return err;
 }
@@ -174,7 +181,7 @@ int sha1_init(hash_state * md)
    @param inlen  The length of the data (octets)
    @return CRYPT_OK if successful
 */
-HASH_PROCESS(sha1_process, s_sha1_compress, sha1, 64)
+HASH_PROCESS(sha1_process, sha1_compress, sha1, 64)
 
 /**
    Terminate the hash to get the digest
@@ -207,7 +214,7 @@ int sha1_done(hash_state * md, unsigned char *out)
         while (md->sha1.curlen < 64) {
             md->sha1.buf[md->sha1.curlen++] = (unsigned char)0;
         }
-        s_sha1_compress(md, md->sha1.buf);
+        sha1_compress(md, md->sha1.buf);
         md->sha1.curlen = 0;
     }
 
@@ -218,7 +225,7 @@ int sha1_done(hash_state * md, unsigned char *out)
 
     /* store length */
     STORE64H(md->sha1.length, md->sha1.buf+56);
-    s_sha1_compress(md, md->sha1.buf);
+    sha1_compress(md, md->sha1.buf);
 
     /* copy output */
     for (i = 0; i < 5; i++) {
@@ -261,7 +268,7 @@ int  sha1_test(void)
 
   for (i = 0; i < (int)(sizeof(tests) / sizeof(tests[0]));  i++) {
       sha1_init(&md);
-      sha1_process(&md, (unsigned char*)tests[i].msg, (unsigned long)XSTRLEN(tests[i].msg));
+      sha1_process(&md, (unsigned char*)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       sha1_done(&md, tmp);
       if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "SHA1", i)) {
          return CRYPT_FAIL_TESTVECTOR;
@@ -274,3 +281,7 @@ int  sha1_test(void)
 #endif
 
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

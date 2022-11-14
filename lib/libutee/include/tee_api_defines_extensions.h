@@ -1,30 +1,10 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2014-2021, Linaro Limited
- * Copyright (c) 2021, SumUp Services GmbH
+ * Copyright (c) 2014, Linaro Limited
  */
 
 #ifndef TEE_API_DEFINES_EXTENSIONS_H
 #define TEE_API_DEFINES_EXTENSIONS_H
-
-/*
- * API extended result codes as per TEE_Result IDs defined in GPD TEE
- * Internal Core API specification v1.1:
- *
- * 0x70000000 - 0x7FFFFFFF: Reserved for implementation-specific return
- *			    code providing non-error information
- * 0x80000000 - 0x8FFFFFFF: Reserved for implementation-specific errors
- *
- * TEE_ERROR_DEFER_DRIVER_INIT - Device driver failed to initialize because
- * the driver depends on a device not yet initialized.
- */
-#define TEE_ERROR_DEFER_DRIVER_INIT	0x80000000
-
-/*
- * TEE_ERROR_NODE_DISABLED - Device driver failed to initialize because it is
- * not allocated for TEE environment.
- */
-#define TEE_ERROR_NODE_DISABLED		0x80000001
 
 /*
  * HMAC-based Extract-and-Expand Key Derivation Function (HKDF)
@@ -83,11 +63,6 @@
 #define TEE_ALG_RSASSA_PKCS1_V1_5	0xF0000830
 
 /*
- *  TDEA CMAC (NIST SP800-38B)
- */
-#define TEE_ALG_DES3_CMAC	0xF0000613
-
-/*
  * Implementation-specific object storage constants
  */
 
@@ -113,12 +88,5 @@
  */
 #define TEE_MEMORY_ACCESS_NONSECURE          0x10000000
 #define TEE_MEMORY_ACCESS_SECURE             0x20000000
-
-/*
- * Implementation-specific login types
- */
-
-/* Private login method for REE kernel clients */
-#define TEE_LOGIN_REE_KERNEL		0x80000000
 
 #endif /* TEE_API_DEFINES_EXTENSIONS_H */

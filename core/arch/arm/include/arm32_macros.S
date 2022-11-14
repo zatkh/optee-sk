@@ -17,10 +17,3 @@
 		.endif
 	.endm
 
-	.macro panic_at_smc_return
-#if defined(CFG_TEE_CORE_DEBUG)
-		bl	__panic_at_smc_return
-#else
-		b	.
-#endif
-	.endm

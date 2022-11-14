@@ -1,18 +1,14 @@
 global-incdirs-y += include
 global-incdirs-y += src/headers
 
-cflags-lib-y += -Wno-declaration-after-statement
-
 cppflags-lib-y += -DARGTYPE=4  # Make LTC_ARGCHK() return on error
-cppflags-lib-y += -DLTC_NO_TEST -DLTC_NO_PROTOTYPES
+cppflags-lib-y += -DLTC_CLEAN_STACK -DLTC_NO_TEST -DLTC_NO_PROTOTYPES
 cppflags-lib-y += -DLTC_NO_TABLES -DLTC_HASH_HELPERS
-cppflags-lib-y += -DLTC_NO_MISC
-cppflags-lib-y += -DLTC_HMAC
 cppflags-lib-$(_CFG_CORE_LTC_SIZE_OPTIMIZATION) += -DLTC_SMALL_CODE
 
 cppflags-lib-y += -DLTC_NO_CIPHERS
 
-ifeq ($(_CFG_CORE_LTC_AES_DESC),y)
+ifneq (,$(filter y,$(_CFG_CORE_LTC_AES) $(_CFG_CORE_LTC_AES_DESC)))
 	cppflags-lib-y += -DLTC_RIJNDAEL
 endif
 ifeq ($(_CFG_CORE_LTC_DES),y)
@@ -42,16 +38,28 @@ endif
 ifeq ($(_CFG_CORE_LTC_SHA1),y)
 	cppflags-lib-y += -DLTC_SHA1
 endif
+ifeq ($(_CFG_CORE_LTC_SHA1_ARM32_CE),y)
+	cppflags-lib-y += -DLTC_SHA1_ARM32_CE
+endif
+ifeq ($(_CFG_CORE_LTC_SHA1_ARM64_CE),y)
+	cppflags-lib-y += -DLTC_SHA1_ARM64_CE
+endif
 ifeq ($(_CFG_CORE_LTC_SHA224),y)
 	cppflags-lib-y += -DLTC_SHA224
 endif
-ifeq ($(_CFG_CORE_LTC_SHA256_DESC),y)
+ifneq (,$(filter y,$(_CFG_CORE_LTC_SHA256) $(_CFG_CORE_LTC_SHA256_DESC))) 
 	cppflags-lib-y += -DLTC_SHA256
 endif
-ifeq ($(_CFG_CORE_LTC_SHA384_DESC),y)
+ifeq ($(_CFG_CORE_LTC_SHA256_ARM32_CE),y)
+	cppflags-lib-y += -DLTC_SHA256_ARM32_CE
+endif
+ifeq ($(_CFG_CORE_LTC_SHA256_ARM64_CE),y)
+	cppflags-lib-y += -DLTC_SHA256_ARM64_CE
+endif
+ifneq (,$(filter y,$(_CFG_CORE_LTC_SHA384) $(_CFG_CORE_LTC_SHA384_DESC)))
 	cppflags-lib-y += -DLTC_SHA384
 endif
-ifeq ($(_CFG_CORE_LTC_SHA512_DESC),y)
+ifneq (,$(filter y,$(_CFG_CORE_LTC_SHA512) $(_CFG_CORE_LTC_SHA512_DESC)))
 	cppflags-lib-y += -DLTC_SHA512
 endif
 ifeq ($(_CFG_CORE_LTC_SHA512_256),y)
@@ -95,7 +103,6 @@ ifeq ($(_CFG_CORE_LTC_ECC),y)
    cppflags-lib-y += -DLTC_ECC256
    cppflags-lib-y += -DLTC_ECC384
    cppflags-lib-y += -DLTC_ECC521
-   cppflags-lib-y += -DLTC_CURVE25519
 
    # ECC 521 bits is the max supported key size
    cppflags-lib-y += -DLTC_MAX_ECC=521
@@ -104,8 +111,11 @@ ifneq (,$(filter y,$(_CFG_CORE_LTC_SM2_DSA) $(_CFG_CORE_LTC_SM2_PKE)))
    cppflags-lib-y += -DLTC_ECC_SM2
 endif
 
-cppflags-lib-$(_CFG_CORE_LTC_X25519) += -DLTC_CURVE25519
-cppflags-lib-$(_CFG_CORE_LTC_ED25519) += -DLTC_CURVE25519
+cppflags-lib-y += -DLTC_NO_PKCS
+
+ifneq (,$(filter y,$(_CFG_CORE_LTC_RSA) $(_CFG_CORE_LTC_DSA) $(_CFG_CORE_LTC_ECC) $(_CFG_CORE_LTC_HASH)))
+   cppflags-lib-y += -DLTC_DER
+endif
 
 cppflags-lib-y += -DLTC_NO_PRNGS -DLTC_FORTUNA
 
@@ -127,16 +137,11 @@ srcs-$(_CFG_CORE_LTC_ECC) += ecc.c
 srcs-$(_CFG_CORE_LTC_RSA) += rsa.c
 srcs-$(_CFG_CORE_LTC_DH) += dh.c
 srcs-$(_CFG_CORE_LTC_AES) += aes.c
-srcs-$(_CFG_CORE_LTC_AES_ACCEL) += aes_accel.c
-srcs-$(_CFG_CORE_LTC_SHA1_ACCEL) += sha1_accel.c
-ifeq ($(_CFG_CORE_LTC_SHA256_DESC),y)
-srcs-$(_CFG_CORE_LTC_SHA256_ACCEL) += sha256_accel.c
-endif
 srcs-$(_CFG_CORE_LTC_SM2_DSA) += sm2-dsa.c
 srcs-$(_CFG_CORE_LTC_SM2_PKE) += sm2-pke.c
 srcs-$(_CFG_CORE_LTC_SM2_KEP) += sm2-kep.c
-srcs-$(_CFG_CORE_LTC_X25519) += x25519.c
-srcs-$(_CFG_CORE_LTC_ED25519) += ed25519.c
+srcs-$(if $(filter y,$(_CFG_CORE_LTC_SM2_PKE) $(_CFG_CORE_LTC_SM2_KEP),y),y) += sm2_kdf.c
+
 ifeq ($(_CFG_CORE_LTC_ACIPHER),y)
 srcs-y += mpi_desc.c
 endif

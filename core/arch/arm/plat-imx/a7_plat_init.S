@@ -16,6 +16,7 @@
 #include <arm32.h>
 #include <arm32_macros.S>
 #include <asm.S>
+#include <kernel/unwind.h>
 #include <platform_config.h>
 
 .section .text
@@ -31,6 +32,8 @@
  * Trap CPU in case of error.
  */
 FUNC plat_cpu_reset_early , :
+UNWIND(	.fnstart)
+
 	/*
 	 * DDI: Disable dual issue [bit28=0]
 	 * DDVM: Disable Distributed Virtual Memory transactions [bit15=0]
@@ -47,10 +50,13 @@ FUNC plat_cpu_reset_early , :
 	write_nsacr r0
 
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early
 
 FUNC get_core_pos_mpidr , :
+UNWIND(	.fnstart)
 	/* Drop ClusterId. There is no SoCs with more than 4 A7 Cores. */
 	and	r0, r0, #MPIDR_CPU_MASK
 	bx	lr
+UNWIND(	.fnend)
 END_FUNC get_core_pos_mpidr

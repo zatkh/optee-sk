@@ -38,7 +38,19 @@ struct pseudo_ta_head {
 	TEE_Result (*invoke_command_entry_point)(void *pSessionContext,
 			uint32_t nCommandID, uint32_t nParamTypes,
 			TEE_Param pParams[TEE_NUM_PARAMS]);
-};
+}
+#ifdef X64
+	/*
+	 * TODO: Determine why on x64 the linker adds 24 bytes of padding after
+	 *       PTA entries in the PTA scattered array, rendering the array
+	 *       unusable. Aligning the structure on an 128-byte boundary works
+	 *       around this issue, though wastes space. The alignment must be a
+	 *       power of 2 and it helps for it to be divisible by 8 for
+	 *       byte-aligned accesses. 128 fits these two criteria.
+	 */
+	__aligned(128)
+#endif
+;
 
 #define pseudo_ta_register(...)	\
 	SCATTERED_ARRAY_DEFINE_PG_ITEM(pseudo_tas, struct pseudo_ta_head) = \
@@ -49,12 +61,12 @@ struct pseudo_ta_ctx {
 	struct tee_ta_ctx ctx;
 };
 
-bool is_pseudo_ta_ctx(struct ts_ctx *ctx);
+bool is_pseudo_ta_ctx(struct tee_ta_ctx *ctx);
 
-static inline struct pseudo_ta_ctx *to_pseudo_ta_ctx(struct ts_ctx *ctx)
+static inline struct pseudo_ta_ctx *to_pseudo_ta_ctx(struct tee_ta_ctx *ctx)
 {
 	assert(is_pseudo_ta_ctx(ctx));
-	return container_of(ctx, struct pseudo_ta_ctx, ctx.ts_ctx);
+	return container_of(ctx, struct pseudo_ta_ctx, ctx);
 }
 
 TEE_Result tee_ta_init_pseudo_ta_session(const TEE_UUID *uuid,

@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /* automatically generated file, do not edit */
@@ -14,11 +21,11 @@ typedef long64 i64;
 typedef i64 gf[16];
 
 static const u8
-  nine[32] = {9};
+  _9[32] = {9};
 static const gf
   gf0,
   gf1 = {1},
-  gf121665 = {0xDB41,1},
+  _121665 = {0xDB41,1},
   D = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141, 0x0a4d, 0x0070, 0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee, 0x5203},
   D2 = {0xf159, 0x26b2, 0x9b94, 0xebd6, 0xb156, 0x8283, 0x149a, 0x00e0, 0xd130, 0xeef3, 0x80f2, 0x198e, 0xfce7, 0x56df, 0xd9dc, 0x2406},
   X = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x692c, 0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3, 0x2169},
@@ -195,7 +202,7 @@ int tweetnacl_crypto_scalarmult(u8 *q,const u8 *n,const u8 *p)
     Z(a,a,c);
     S(b,a);
     Z(c,d,f);
-    M(a,c,gf121665);
+    M(a,c,_121665);
     A(a,a,d);
     M(c,c,a);
     M(a,d,f);
@@ -218,25 +225,21 @@ int tweetnacl_crypto_scalarmult(u8 *q,const u8 *n,const u8 *p)
 
 int tweetnacl_crypto_scalarmult_base(u8 *q,const u8 *n)
 {
-  return tweetnacl_crypto_scalarmult(q,n,nine);
+  return tweetnacl_crypto_scalarmult(q,n,_9);
 }
 
-static LTC_INLINE int tweetnacl_crypto_hash_ctx(u8 *out,const u8 *m,u64 n,const u8 *ctx,u32 cs)
+static int tweetnacl_crypto_hash(u8 *out,const u8 *m,u64 n)
 {
-  unsigned long len = 64;
-  int hash_idx = find_hash("sha512");
+  unsigned long len;
+  int err, hash_idx;
 
   if (n > ULONG_MAX) return CRYPT_OVERFLOW;
 
-  if(cs == 0)
-    return hash_memory(hash_idx, m, n, out, &len);
+  hash_idx = find_hash("sha512");
+  len = 64;
+  if ((err = hash_memory(hash_idx, m, n, out, &len)) != CRYPT_OK) return err;
 
-  return hash_memory_multi(hash_idx, out, &len, ctx, cs, m, n, LTC_NULL);
-}
-
-static LTC_INLINE int tweetnacl_crypto_hash(u8 *out,const u8 *m,u64 n)
-{
-  return tweetnacl_crypto_hash_ctx(out, m, n, NULL, 0);
+  return 0;
 }
 
 sv add(gf p[4],gf q[4])
@@ -380,7 +383,7 @@ sv reduce(u8 *r)
   modL(r,x);
 }
 
-int tweetnacl_crypto_sign(u8 *sm,u64 *smlen,const u8 *m,u64 mlen,const u8 *sk,const u8 *pk, const u8 *ctx, u64 cs)
+int tweetnacl_crypto_sign(u8 *sm,u64 *smlen,const u8 *m,u64 mlen,const u8 *sk,const u8 *pk)
 {
   u8 d[64],h[64],r[64];
   i64 i,j,x[64];
@@ -395,13 +398,13 @@ int tweetnacl_crypto_sign(u8 *sm,u64 *smlen,const u8 *m,u64 mlen,const u8 *sk,co
   FOR(i,(i64)mlen) sm[64 + i] = m[i];
   FOR(i,32) sm[32 + i] = d[32 + i];
 
-  tweetnacl_crypto_hash_ctx(r, sm+32, mlen+32,ctx,cs);
+  tweetnacl_crypto_hash(r, sm+32, mlen+32);
   reduce(r);
   scalarbase(p,r);
   pack(sm,p);
 
   FOR(i,32) sm[i+32] = pk[i];
-  tweetnacl_crypto_hash_ctx(h,sm,mlen + 64,ctx,cs);
+  tweetnacl_crypto_hash(h,sm,mlen + 64);
   reduce(h);
 
   FOR(i,64) x[i] = 0;
@@ -448,7 +451,7 @@ static int unpackneg(gf r[4],const u8 p[32])
   return 0;
 }
 
-int tweetnacl_crypto_sign_open(int *stat, u8 *m,u64 *mlen,const u8 *sm,u64 smlen,const u8 *ctx,u64 cs,const u8 *pk)
+int tweetnacl_crypto_sign_open(int *stat, u8 *m,u64 *mlen,const u8 *sm,u64 smlen,const u8 *pk)
 {
   u64 i;
   u8 s[32],t[32],h[64];
@@ -464,7 +467,7 @@ int tweetnacl_crypto_sign_open(int *stat, u8 *m,u64 *mlen,const u8 *sm,u64 smlen
   XMEMMOVE(m,sm,smlen);
   XMEMMOVE(s,m + 32,32);
   XMEMMOVE(m + 32,pk,32);
-  tweetnacl_crypto_hash_ctx(h,m,smlen,ctx,cs);
+  tweetnacl_crypto_hash(h,m,smlen);
   reduce(h);
   scalarmult(p,q,h);
 
@@ -485,7 +488,6 @@ int tweetnacl_crypto_sign_open(int *stat, u8 *m,u64 *mlen,const u8 *sm,u64 smlen
   return CRYPT_OK;
 }
 
-int tweetnacl_crypto_ph(u8 *out,const u8 *msg,u64 msglen)
-{
-  return tweetnacl_crypto_hash(out, msg, msglen);
-}
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

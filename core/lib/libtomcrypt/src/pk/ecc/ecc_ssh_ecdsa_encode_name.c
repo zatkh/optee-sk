@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -7,8 +14,6 @@
    Curve/OID to SSH+ECDSA name string mapping per RFC5656
    Russ Williams
 */
-
-#ifdef LTC_SSH
 
 /**
   Curve/OID to SSH+ECDSA name string mapping
@@ -19,9 +24,10 @@
 */
 int ecc_ssh_ecdsa_encode_name(char *buffer, unsigned long *buflen, const ecc_key *key)
 {
-   char oidstr[64] = {0};
+   char oidstr[64];
    unsigned long oidlen = sizeof(oidstr);
-   int err, size = 0;
+   unsigned long size = 0;
+   int err;
 
    LTC_ARGCHK(buffer != NULL);
    LTC_ARGCHK(buflen != NULL);
@@ -47,11 +53,8 @@ int ecc_ssh_ecdsa_encode_name(char *buffer, unsigned long *buflen, const ecc_key
       size = snprintf(buffer, *buflen, "ecdsa-sha2-%s", oidstr);
    }
 
-   /* snprintf returns a negative value on error
-    * or the size that would have been written, but limits to buflen-1 chars plus terminator */
-   if (size < 0) {
-      err = CRYPT_ERROR;
-   } else if ((unsigned)size >= *buflen) {
+   /* snprintf returns size that would have been written, but limits to buflen-1 chars plus terminator */
+   if (size >= *buflen) {
       err = CRYPT_BUFFER_OVERFLOW;
    } else {
       err = CRYPT_OK;
@@ -62,4 +65,7 @@ error:
    return err;
 }
 
-#endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

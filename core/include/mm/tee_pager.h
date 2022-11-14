@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2016-2021, Linaro Limited
+ * Copyright (c) 2016, Linaro Limited
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 
@@ -14,6 +14,26 @@
 #include <mm/tee_mm.h>
 #include <string.h>
 #include <trace.h>
+
+enum tee_pager_area_type {
+	PAGER_AREA_TYPE_RO,
+	PAGER_AREA_TYPE_RW,
+	PAGER_AREA_TYPE_LOCK,
+};
+
+struct tee_pager_area {
+	struct fobj *fobj;
+	size_t fobj_pgoffs;
+	enum tee_pager_area_type type;
+	uint32_t flags;
+	vaddr_t base;
+	size_t size;
+	struct pgt *pgt;
+	TAILQ_ENTRY(tee_pager_area) link;
+	TAILQ_ENTRY(tee_pager_area) fobj_link;
+};
+
+TAILQ_HEAD(tee_pager_area_head, tee_pager_area);
 
 /*
  * tee_pager_early_init() - Perform early initialization of pager
@@ -36,11 +56,10 @@ bool tee_pager_get_table_info(vaddr_t va, struct core_mmu_table_info *ti);
  * tee_pager_phys_to_virt() - Translate physical address to virtual address
  * looking in the pager page tables
  * @pa:	address to translate
- * @len: check for length is mapped linearly in CORE_MMU_PGDIR_SIZE range
  *
  * Returns found virtual address or NULL on error
  */
-void *tee_pager_phys_to_virt(paddr_t pa, size_t len);
+void *tee_pager_phys_to_virt(paddr_t pa);
 
 /*
  * tee_pager_set_alias_area() - Initialize pager alias area
@@ -50,17 +69,6 @@ void *tee_pager_phys_to_virt(paddr_t pa, size_t len);
  * Panics if called twice or some other error occurs.
  */
 void tee_pager_set_alias_area(tee_mm_entry_t *mm_alias);
-
-/*
- * tee_pager_init_iv_region() - Initialized pager region for tags IVs used by RW
- *			        paged fobjs
- * @fobj:	fobj backing the region
- *
- * Panics if called twice or some other error occurs.
- *
- * Returns virtual address of start of IV region.
- */
-vaddr_t tee_pager_init_iv_region(struct fobj *fobj);
 
 /*
  * tee_pager_generate_authenc_key() - Generates authenc key for r/w paging
@@ -76,59 +84,58 @@ static inline void tee_pager_generate_authenc_key(void)
 #endif
 
 /*
- * tee_pager_add_core_region() - Adds a pageable core region
- * @base:	base of covered memory region
- * @type:	type of memory region
- * @fobj:	fobj backing the region
+ * tee_pager_add_core_area() - Adds a pageable core area
+ * @base:	base of covered memory area
+ * @type:	type of memory area
+ * @fobj:	fobj backing the area
  *
  * Non-page aligned base or size will cause a panic.
  */
-void tee_pager_add_core_region(vaddr_t base, enum vm_paged_region_type type,
-			       struct fobj *fobj);
+void tee_pager_add_core_area(vaddr_t base, enum tee_pager_area_type type,
+			     struct fobj *fobj);
 
 /*
- * tee_pager_add_um_region() - Adds a pageable user TA region
- * @uctx:	user mode context of the region
- * @base:	base of covered memory region
- * @fobj:	fobj of the store backing the memory region
+ * tee_pager_add_um_area() - Adds a pageable user ta area
+ * @uctx:	user mode context of the area
+ * @base:	base of covered memory area
+ * @fobj:	fobj of the store backing the memory area
  *
  * The mapping is created suitable to initialize the memory content while
- * loading the TA. Once the TA is properly loaded the regions should be
- * finalized with tee_pager_set_um_region_attr() to get more strict settings.
+ * loading the TA. Once the TA is properly loaded the areas should be
+ * finalized with tee_pager_set_um_area_attr() to get more strict settings.
  *
- * Return TEE_SUCCESS on success, anything else if the region can't be added
+ * Return TEE_SUCCESS on success, anything else if the area can't be added
  */
 #ifdef CFG_PAGED_USER_TA
-TEE_Result tee_pager_add_um_region(struct user_mode_ctx *uctx, vaddr_t base,
-				   struct fobj *fobj, uint32_t prot);
+TEE_Result tee_pager_add_um_area(struct user_mode_ctx *uctx, vaddr_t base,
+				 struct fobj *fobj, uint32_t prot);
 #else
 static inline TEE_Result
-tee_pager_add_um_region(struct user_mode_ctx *uctx __unused,
-			vaddr_t base __unused, struct fobj *fobj __unused,
-			uint32_t prot __unused)
+tee_pager_add_um_area(struct user_mode_ctx *uctx __unused,
+		      vaddr_t base __unused, struct fobj *fobj __unused,
+		      uint32_t prot __unused)
 {
 	return TEE_ERROR_NOT_SUPPORTED;
 }
 #endif
 
 /*
- * tee_pager_set_um_region_attr() - Set attributes of a initialized memory
- *				    region
- * @uctx:	user mode context of the region
- * @base:	base of covered memory region
- * @size:	size of covered memory region
- * @flags:	TEE_MATTR_U* flags describing permissions of the region
+ * tee_pager_set_um_area_attr() - Set attributes of a initialized memory area
+ * @uctx:	user mode context of the area
+ * @base:	base of covered memory area
+ * @size:	size of covered memory area
+ * @flags:	TEE_MATTR_U* flags describing permissions of the area
  *
- * Return true on success of false if the region can't be updated
+ * Return true on success of false if the area can't be updated
  */
 #ifdef CFG_PAGED_USER_TA
-bool tee_pager_set_um_region_attr(struct user_mode_ctx *uctx, vaddr_t base,
-				  size_t size, uint32_t flags);
+bool tee_pager_set_um_area_attr(struct user_mode_ctx *uctx, vaddr_t base,
+				size_t size, uint32_t flags);
 #else
 static inline bool
-tee_pager_set_um_region_attr(struct user_mode_ctx *uctx __unused,
-			     vaddr_t base __unused, size_t size __unused,
-			     uint32_t flags __unused)
+tee_pager_set_um_area_attr(struct user_mode_ctx *uctx __unused,
+			   vaddr_t base __unused, size_t size __unused,
+			   uint32_t flags __unused)
 {
 	return false;
 }
@@ -168,15 +175,15 @@ tee_pager_merge_um_region(struct user_mode_ctx *uctx __unused,
 #endif
 
 /*
- * tee_pager_rem_uma_regions() - Remove all user TA regions
+ * tee_pager_rem_uma_areas() - Remove all user ta areas
  * @uctx:	user mode context
  *
  * This function is called when a user mode context is teared down.
  */
 #ifdef CFG_PAGED_USER_TA
-void tee_pager_rem_um_regions(struct user_mode_ctx *uctx);
+void tee_pager_rem_um_areas(struct user_mode_ctx *uctx);
 #else
-static inline void tee_pager_rem_um_regions(struct user_mode_ctx *uctx __unused)
+static inline void tee_pager_rem_um_areas(struct user_mode_ctx *uctx __unused)
 {
 }
 #endif
@@ -186,7 +193,7 @@ static inline void tee_pager_rem_um_regions(struct user_mode_ctx *uctx __unused)
  * @uctx:	user mode context
  *
  * This function is called to assign translation tables for the pageable
- * regions of a user TA.
+ * areas of a user TA.
  */
 #ifdef CFG_PAGED_USER_TA
 void tee_pager_assign_um_tables(struct user_mode_ctx *uctx);
@@ -223,11 +230,6 @@ void *tee_pager_alloc(size_t size);
  * This function is called when a translation table needs to be recycled
  */
 void tee_pager_pgt_save_and_release_entries(struct pgt *pgt);
-#else
-static inline void
-tee_pager_pgt_save_and_release_entries(struct pgt *pgt __unused)
-{
-}
 #endif
 
 /*

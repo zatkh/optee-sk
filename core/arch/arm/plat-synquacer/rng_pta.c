@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (C) 2018-2022, Linaro Limited
+ * Copyright (C) 2018, Linaro Limited
  */
 
 /*
@@ -81,10 +81,9 @@
 #include <kernel/timer.h>
 #include <mm/core_memprot.h>
 #include <io.h>
-#include <pta_rng.h>
 #include <string.h>
-
-#include "synquacer_rng_pta.h"
+#include <rng_pta.h>
+#include <rng_pta_client.h>
 
 #define PTA_NAME "rng.pta"
 
@@ -231,8 +230,7 @@ void rng_collect_entropy(void)
 	for (i = 0; i < NUM_SENSORS; i++) {
 		vaddr = phys_to_virt_io(THERMAL_SENSOR_BASE0 +
 					(THERMAL_SENSOR_OFFSET * i) +
-					TEMP_DATA_REG_OFFSET,
-					sizeof(uint32_t));
+					TEMP_DATA_REG_OFFSET);
 		sensors_data[sensors_data_slot_idx + i][sensors_data_idx] =
 					(uint8_t)io_read32((vaddr_t)vaddr);
 	}

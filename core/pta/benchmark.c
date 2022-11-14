@@ -12,12 +12,12 @@
 #include <mm/mobj.h>
 #include <mm/tee_mm.h>
 #include <mm/tee_pager.h>
-#include <mm/vm.h>
+#include <mm/tee_mmu.h>
 #include <optee_rpc_cmd.h>
 #include <pta_benchmark.h>
-#include <stdio.h>
-#include <string_ext.h>
 #include <string.h>
+#include <string_ext.h>
+#include <stdio.h>
 #include <trace.h>
 
 #define TA_NAME		"benchmark.ta"
@@ -75,8 +75,7 @@ static TEE_Result alloc_benchmark_buffer(uint32_t type,
 		return TEE_ERROR_OUT_OF_MEMORY;
 	}
 
-	bench_ts_global = (struct tee_ts_global *)mobj_get_va(bench_mobj, 0,
-							      bench_ts_size);
+	bench_ts_global = (struct tee_ts_global *)mobj_get_va(bench_mobj, 0);
 	if (!bench_ts_global) {
 		thread_rpc_free_global_payload(bench_mobj);
 		bench_mobj = NULL;

@@ -37,13 +37,12 @@
         END_FUNC \name
         .endm
 
-	FUNC _utee_panic, :
+	FUNC utee_panic, :
 	stp	x29, x30, [sp, #-16]!
 	mov	x1, sp
 	bl	__utee_panic
 	/* Not reached */
-	END_FUNC _utee_panic
+	END_FUNC utee_panic
 
 #include "utee_syscalls_asm.S"
 
-BTI(emit_aarch64_feature_1_and     GNU_PROPERTY_AARCH64_FEATURE_1_BTI)

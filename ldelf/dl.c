@@ -32,7 +32,6 @@ TEE_Result dlsym_entry(struct dl_entry_arg *arg)
 			return TEE_ERROR_ITEM_NOT_FOUND;
 	}
 
-	return ta_elf_resolve_sym(arg->dlsym.symbol, &arg->dlsym.val, NULL,
-				  elf);
+	return ta_elf_resolve_sym(arg->dlsym.symbol, &arg->dlsym.val, elf);
 }
 

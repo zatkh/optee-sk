@@ -28,7 +28,7 @@ struct sc_rec {
 /*
  * uint32_t tee_svc_do_call(struct thread_svc_regs *regs, tee_svc_func func);
  *
- * Called from user_ta_handle_svc()
+ * Called from tee_svc_handler()
  */
 FUNC tee_svc_do_call , :
 	sub	sp, sp, #SC_REC_SIZE
@@ -73,7 +73,7 @@ FUNC tee_svc_do_call , :
 	mov	x0, sp
 	mov	x1, x5
 	add	x2, xzr, x6, lsl #2
-	bl	copy_from_user
+	bl	tee_svc_copy_from_user
 	/* If copy failed return the error */
 	cmp	x0, #0
 	bne	.Lret
@@ -195,5 +195,3 @@ FUNC syscall_panic , :
 	ldr	x3, [x19, #SC_REC_X0] /* pointer to struct thread_svc_regs */
 	b	tee_svc_sys_return_helper
 END_FUNC syscall_panic
-
-BTI(emit_aarch64_feature_1_and     GNU_PROPERTY_AARCH64_FEATURE_1_BTI)

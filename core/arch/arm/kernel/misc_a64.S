@@ -15,8 +15,7 @@ FUNC __get_core_pos , : , .identity_map
 END_FUNC __get_core_pos
 
 /* size_t get_core_pos_mpidr(uint32_t mpidr); */
-/* Let platforms override this if needed */
-WEAK_FUNC get_core_pos_mpidr , :
+FUNC get_core_pos_mpidr , :
 	/*
 	 * Shift MPIDR value if it's not already shifted.
 	 * Using logical shift ensures AFF0 to be filled with zeroes.
@@ -52,4 +51,5 @@ WEAK_FUNC get_core_pos_mpidr , :
 	ret
 END_FUNC get_core_pos_mpidr
 
-BTI(emit_aarch64_feature_1_and     GNU_PROPERTY_AARCH64_FEATURE_1_BTI)
+/* Let platforms override this if needed */
+.weak get_core_pos_mpidr

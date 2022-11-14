@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -83,9 +90,9 @@ CONST64(0x5fcb6fab3ad6faec), CONST64(0x6c44198c4a475817)
 
 /* compress 1024-bits */
 #ifdef LTC_CLEAN_STACK
-static int ss_sha512_compress(hash_state * md, const unsigned char *buf)
+static int _sha512_compress(hash_state * md, const unsigned char *buf)
 #else
-static int  s_sha512_compress(hash_state * md, const unsigned char *buf)
+static int  sha512_compress(hash_state * md, const unsigned char *buf)
 #endif
 {
     ulong64 S[8], W[80], t0, t1;
@@ -150,10 +157,10 @@ static int  s_sha512_compress(hash_state * md, const unsigned char *buf)
 
 /* compress 1024-bits */
 #ifdef LTC_CLEAN_STACK
-static int s_sha512_compress(hash_state * md, const unsigned char *buf)
+static int sha512_compress(hash_state * md, const unsigned char *buf)
 {
     int err;
-    err = ss_sha512_compress(md, buf);
+    err = _sha512_compress(md, buf);
     burn_stack(sizeof(ulong64) * 90 + sizeof(int));
     return err;
 }
@@ -187,7 +194,7 @@ int sha512_init(hash_state * md)
    @param inlen  The length of the data (octets)
    @return CRYPT_OK if successful
 */
-HASH_PROCESS(sha512_process, s_sha512_compress, sha512, 128)
+HASH_PROCESS(sha512_process, sha512_compress, sha512, 128)
 
 /**
    Terminate the hash to get the digest
@@ -220,7 +227,7 @@ int sha512_done(hash_state * md, unsigned char *out)
         while (md->sha512.curlen < 128) {
             md->sha512.buf[md->sha512.curlen++] = (unsigned char)0;
         }
-        s_sha512_compress(md, md->sha512.buf);
+        sha512_compress(md, md->sha512.buf);
         md->sha512.curlen = 0;
     }
 
@@ -234,7 +241,7 @@ int sha512_done(hash_state * md, unsigned char *out)
 
     /* store length */
     STORE64H(md->sha512.length, md->sha512.buf+120);
-    s_sha512_compress(md, md->sha512.buf);
+    sha512_compress(md, md->sha512.buf);
 
     /* copy output */
     for (i = 0; i < 8; i++) {
@@ -287,7 +294,7 @@ int  sha512_test(void)
 
   for (i = 0; i < (int)(sizeof(tests) / sizeof(tests[0])); i++) {
       sha512_init(&md);
-      sha512_process(&md, (unsigned char *)tests[i].msg, (unsigned long)XSTRLEN(tests[i].msg));
+      sha512_process(&md, (unsigned char *)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       sha512_done(&md, tmp);
       if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "SHA512", i)) {
          return CRYPT_FAIL_TESTVECTOR;
@@ -301,3 +308,7 @@ int  sha512_test(void)
 
 
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

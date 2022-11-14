@@ -1,4 +1,4 @@
-include core/arch/arm/kernel/link.mk
+include core/kernel/link.mk
 
 # Create stm32 formatted images from the native binary images
 

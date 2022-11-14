@@ -7,8 +7,6 @@
 
 #if defined(CFG_TA_GPROF_SUPPORT) || defined(CFG_FTRACE_SUPPORT)
 
-	.section .note.GNU-stack,"",%progbits
-
 /*
  * Convert return address to call site address by subtracting the size of the
  * mcount call instruction (blx __gnu_mcount_nc).
@@ -27,7 +25,6 @@
  *   void __mcount_internal(void *frompc, void *selfpc);
  */
 FUNC __gnu_mcount_nc, :
-UNWIND(	.cantunwind)
 	stmdb		sp!, {r0-r3, lr}
 #if defined(CFG_TA_GPROF_SUPPORT) && !defined(__KERNEL__)
 	ldr		r0, [sp, #20]		/* lr of instrumented func */

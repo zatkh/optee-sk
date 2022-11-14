@@ -12,13 +12,16 @@ OUTPUT_ARCH(arm)
 OUTPUT_FORMAT("elf64-littleaarch64")
 OUTPUT_ARCH(aarch64)
 #endif
+#ifdef X64
+OUTPUT_FORMAT("elf64-x86-64")
+OUTPUT_ARCH(i386:x86-64)
+#endif
 
 ENTRY(_ldelf_start)
 SECTIONS {
 	.text : {
 		__text_start = .;
-		*(.text._ldelf_start)
-		*(.text .text.*)
+		*(.text._ldelf_start .text .text.*)
 		*(.stub)
 		*(.glue_7)
 		*(.glue_7t)
@@ -27,7 +30,6 @@ SECTIONS {
 		*(.vfp11_veneer)
 		__text_end = .;
 	}
-	.note.gnu.property : { *(.note.gnu.property) }
         .plt : { *(.plt) }
 
 	.eh_frame : { *(.eh_frame) }

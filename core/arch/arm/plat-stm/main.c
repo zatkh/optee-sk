@@ -8,10 +8,11 @@
 #include <drivers/gic.h>
 #include <drivers/stih_asc.h>
 #include <io.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/interrupt.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/tz_ssvce_pl310.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
@@ -50,13 +51,27 @@ static bool ns_resources_ready(void)
 }
 
 /* Overriding the default __weak tee_entry_std() */
-TEE_Result tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
+uint32_t tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 {
 	boot_is_completed = 1;
 
 	return __tee_entry_std(arg, num_params);
 }
 #endif
+
+static const struct thread_handlers handlers = {
+	.cpu_on = pm_panic,
+	.cpu_off = pm_panic,
+	.cpu_suspend = pm_panic,
+	.cpu_resume = pm_panic,
+	.system_off = pm_panic,
+	.system_reset = pm_panic,
+};
+
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
 
 void console_init(void)
 {
@@ -90,7 +105,7 @@ vaddr_t pl310_base(void)
 
 	if (cpu_mmu_enabled()) {
 		if (!va)
-			va = phys_to_virt(PL310_BASE, MEM_AREA_IO_SEC, 1);
+			va = phys_to_virt(PL310_BASE, MEM_AREA_IO_SEC);
 		return (vaddr_t)va;
 	}
 	return PL310_BASE;
@@ -135,7 +150,16 @@ void plat_primary_init_early(void)
 
 void main_init_gic(void)
 {
-	gic_init(&gic_data, GIC_CPU_BASE, GIC_DIST_BASE);
+	vaddr_t gicc_base;
+	vaddr_t gicd_base;
+
+	gicc_base = (vaddr_t)phys_to_virt(GIC_CPU_BASE, MEM_AREA_IO_SEC);
+	gicd_base = (vaddr_t)phys_to_virt(GIC_DIST_BASE, MEM_AREA_IO_SEC);
+
+	if (!gicc_base || !gicd_base)
+		panic();
+
+	gic_init(&gic_data, gicc_base, gicd_base);
 	itr_init(&gic_data.chip);
 }
 

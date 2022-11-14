@@ -66,7 +66,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <compiler.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <string.h>
@@ -149,11 +148,6 @@ __vsnprintf(char *bf, size_t size, const char *fmt, va_list ap,
 			bf[retval] = '\0';
 	}
 	return retval;
-}
-
-int __vsprintf(char *bf, const char *fmt, va_list ap)
-{
-	return kprintf(fmt, TOBUFONLY, NULL, bf, ap, false);
 }
 
 /*
@@ -317,7 +311,7 @@ reswitch:	switch (ch) {
 			if ((width = va_arg(ap, int)) >= 0)
 				goto rflag;
 			width = -width;
-			fallthrough;
+			/* FALLTHROUGH */
 		case '-':
 			flags |= LADJUST;
 			goto rflag;
@@ -384,7 +378,7 @@ reswitch:	switch (ch) {
 			break;
 		case 'D':
 			flags |= LONGINT;
-			fallthrough;
+			/*FALLTHROUGH*/
 		case 'd':
 		case 'i':
 			_uquad = SARG();
@@ -412,7 +406,7 @@ reswitch:	switch (ch) {
 			continue;	/* no output */
 		case 'O':
 			flags |= LONGINT;
-			fallthrough;
+			/*FALLTHROUGH*/
 		case 'o':
 			_uquad = UARG();
 			base = OCT;
@@ -468,7 +462,7 @@ reswitch:	switch (ch) {
 			break;
 		case 'U':
 			flags |= LONGINT;
-			fallthrough;
+			/*FALLTHROUGH*/
 		case 'u':
 			_uquad = UARG();
 			base = DEC;

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2015-2021, Linaro Limited
+ * Copyright (c) 2015-2016, Linaro Limited
  */
-
 #include <compiler.h>
-#include <kernel/notif.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <kernel/wait_queue.h>
@@ -22,22 +20,28 @@ void wq_init(struct wait_queue *wq)
 	*wq = (struct wait_queue)WAIT_QUEUE_INITIALIZER;
 }
 
-static void do_notif(TEE_Result (*fn)(uint32_t), int id,
-		     const char *cmd_str __maybe_unused,
-		     const void *sync_obj __maybe_unused,
+/*
+ * Note: this function is weak just to make it possible to exclude it from
+ * the unpaged area.
+ */
+void __weak __wq_rpc(uint32_t func, int id, const void *sync_obj __maybe_unused,
 		     const char *fname, int lineno __maybe_unused)
 {
-	TEE_Result res = TEE_SUCCESS;
+	uint32_t ret;
+	const char *cmd_str __maybe_unused =
+	     func == OPTEE_RPC_WAIT_QUEUE_SLEEP ? "sleep" : "wake ";
 
 	if (fname)
-		DMSG("%s thread %d %p %s:%d", cmd_str, id,
+		DMSG("%s thread %u %p %s:%d", cmd_str, id,
 		     sync_obj, fname, lineno);
 	else
-		DMSG("%s thread %d %p", cmd_str, id, sync_obj);
+		DMSG("%s thread %u %p", cmd_str, id, sync_obj);
 
-	res = fn(id + NOTIF_SYNC_VALUE_BASE);
-	if (res)
-		DMSG("%s thread %d res %#"PRIx32, cmd_str, id, res);
+	struct thread_param params = THREAD_PARAM_VALUE(IN, func, id, 0);
+
+	ret = thread_rpc_cmd(OPTEE_RPC_CMD_WAIT_QUEUE, 1, &params);
+	if (ret != TEE_SUCCESS)
+		DMSG("%s thread %u ret 0x%x", cmd_str, id, ret);
 }
 
 static void slist_add_tail(struct wait_queue *wq, struct wait_queue_elem *wqe)
@@ -78,8 +82,8 @@ void wq_wait_final(struct wait_queue *wq, struct wait_queue_elem *wqe,
 	unsigned done;
 
 	do {
-		do_notif(notif_wait, wqe->handle,
-			 "sleep", sync_obj, fname, lineno);
+		__wq_rpc(OPTEE_RPC_WAIT_QUEUE_SLEEP, wqe->handle,
+			 sync_obj, fname, lineno);
 
 		old_itr_status = cpu_spin_lock_xsave(&wq_spin_lock);
 
@@ -132,8 +136,8 @@ void wq_wake_next(struct wait_queue *wq, const void *sync_obj,
 		cpu_spin_unlock_xrestore(&wq_spin_lock, old_itr_status);
 
 		if (do_wakeup)
-			do_notif(notif_send_sync, handle,
-				 "wake ", sync_obj, fname, lineno);
+			__wq_rpc(OPTEE_RPC_WAIT_QUEUE_WAKEUP, handle,
+				 sync_obj, fname, lineno);
 
 		if (!do_wakeup || !wake_read)
 			break;
@@ -156,7 +160,7 @@ void wq_promote_condvar(struct wait_queue *wq, struct condvar *cv,
 	/*
 	 * Find condvar waiter(s) and promote each to an active waiter.
 	 * This is a bit unfair to eventual other active waiters as a
-	 * condvar waiter is added to the queue when waiting for the
+	 * condvar waiter is added the the queue when waiting for the
 	 * condvar.
 	 */
 	SLIST_FOREACH(wqe, wq, link) {

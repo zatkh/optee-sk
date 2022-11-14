@@ -23,17 +23,11 @@
 #if defined(CFG_CRYPTO_SHA1)
 #define MBEDTLS_SHA1_C
 #define MBEDTLS_MD_C
-#if defined(CFG_CORE_CRYPTO_SHA1_ACCEL)
-#define MBEDTLS_SHA1_PROCESS_ALT
-#endif
 #endif
 
 #if defined(CFG_CRYPTO_SHA224) || defined(CFG_CRYPTO_SHA256)
 #define MBEDTLS_SHA256_C
 #define MBEDTLS_MD_C
-#if defined(CFG_CRYPTO_SHA256_ACCEL)
-#define MBEDTLS_SHA256_PROCESS_ALT
-#endif
 #endif
 
 #if defined(CFG_CRYPTO_SHA384) || defined(CFG_CRYPTO_SHA512)
@@ -48,9 +42,6 @@
 #if defined(CFG_CRYPTO_AES)
 #define MBEDTLS_AES_C
 #define MBEDTLS_AES_ROM_TABLES
-#if defined(CFG_CORE_CRYPTO_AES_ACCEL)
-#define MBEDTLS_AES_ALT
-#endif
 #endif
 
 #if defined(CFG_CRYPTO_DES)
@@ -110,11 +101,6 @@
 #define MBEDTLS_ECP_C
 #define MBEDTLS_ECDSA_C
 #define MBEDTLS_ECDH_C
-#define MBEDTLS_ECDH_LEGACY_CONTEXT
-#if defined(CFG_CRYPTO_DSA) || defined(CFG_CRYPTO_SM2_PKE) || \
-	defined(CFG_CRYPTO_SM2_KEP)
-#define MBEDTLS_ECP_DP_SM2_ENABLED
-#endif
 #endif
 
 #endif /*CFG_CRYPTOLIB_NAME_mbedtls*/

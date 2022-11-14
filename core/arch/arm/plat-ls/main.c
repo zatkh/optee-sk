@@ -38,17 +38,36 @@
 #include <drivers/ns16550.h>
 #endif
 #include <io.h>
-#include <kernel/boot.h>
-#include <kernel/dt.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/thread.h>
 #include <kernel/tz_ssvce_def.h>
-#include <libfdt.h>
 #include <mm/core_memprot.h>
 #include <sm/optee_smc.h>
+#include <tee/entry_fast.h>
+#include <tee/entry_std.h>
 #include <kernel/tee_common_otp.h>
 #include <mm/core_mmu.h>
+
+static const struct thread_handlers handlers = {
+#if defined(CFG_WITH_ARM_TRUSTED_FW)
+	.cpu_on = cpu_on_handler,
+	.cpu_off = pm_do_nothing,
+	.cpu_suspend = pm_do_nothing,
+	.cpu_resume = pm_do_nothing,
+	.system_off = pm_do_nothing,
+	.system_reset = pm_do_nothing,
+#else
+	.cpu_on = pm_panic,
+	.cpu_off = pm_panic,
+	.cpu_suspend = pm_panic,
+	.cpu_resume = pm_panic,
+	.system_off = pm_panic,
+	.system_reset = pm_panic,
+#endif
+};
 
 static struct gic_data gic_data;
 #ifdef CFG_PL011
@@ -59,19 +78,12 @@ static struct ns16550_data console_data;
 
 register_phys_mem_pgdir(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE,
 			CORE_MMU_PGDIR_SIZE);
-#if !defined(PLATFORM_FLAVOR_lx2160aqds) && !defined(PLATFORM_FLAVOR_lx2160ardb)
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, GIC_BASE, CORE_MMU_PGDIR_SIZE);
-#endif
 
-#if defined(PLATFORM_FLAVOR_lx2160ardb) || defined(PLATFORM_FLAVOR_lx2160aqds)
-register_ddr(CFG_DRAM0_BASE, (CFG_TZDRAM_START - CFG_DRAM0_BASE));
-#ifdef CFG_DRAM1_BASE
-register_ddr(CFG_DRAM1_BASE, CFG_DRAM1_SIZE);
-#endif
-#endif
-#ifdef DCFG_BASE
-register_phys_mem_pgdir(MEM_AREA_IO_NSEC, DCFG_BASE, CORE_MMU_PGDIR_SIZE);
-#endif
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
 
 #ifdef CFG_ARM32_core
 void plat_primary_init_early(void)
@@ -116,112 +128,29 @@ void plat_primary_init_early(void)
 void console_init(void)
 {
 #ifdef CFG_PL011
-	/*
-	 * Everything for uart driver initialization is done in bootloader.
-	 * So not reinitializing console.
-	 */
-	pl011_init(&console_data, CONSOLE_UART_BASE, 0, 0);
+	pl011_init(&console_data, CONSOLE_UART_BASE, CONSOLE_UART_CLK_IN_HZ,
+		   CONSOLE_BAUDRATE);
 #else
-	ns16550_init(&console_data, CONSOLE_UART_BASE, IO_WIDTH_U8, 0);
+	ns16550_init(&console_data, CONSOLE_UART_BASE);
 #endif
 	register_serial_console(&console_data.chip);
 }
 
-#if defined(PLATFORM_FLAVOR_lx2160aqds) || defined(PLATFORM_FLAVOR_lx2160ardb)
-static TEE_Result get_gic_base_addr_from_dt(paddr_t *gic_addr)
-{
-	paddr_t paddr = 0;
-	size_t size = 0;
-
-	void *fdt = get_embedded_dt();
-	int gic_offset = 0;
-
-	gic_offset = fdt_path_offset(fdt, "/soc/interrupt-controller@6000000");
-
-	if (gic_offset < 0)
-		gic_offset = fdt_path_offset(fdt,
-					     "/interrupt-controller@6000000");
-
-	if (gic_offset > 0) {
-		paddr = _fdt_reg_base_address(fdt, gic_offset);
-		if (paddr == DT_INFO_INVALID_REG) {
-			EMSG("GIC: Unable to get base addr from DT");
-			return TEE_ERROR_ITEM_NOT_FOUND;
-		}
-
-		size = _fdt_reg_size(fdt, gic_offset);
-		if (size == DT_INFO_INVALID_REG_SIZE) {
-			EMSG("GIC: Unable to get size of base addr from DT");
-			return TEE_ERROR_ITEM_NOT_FOUND;
-		}
-	} else {
-		EMSG("Unable to get gic offset node");
-		return TEE_ERROR_ITEM_NOT_FOUND;
-	}
-
-	/* make entry in page table */
-	if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, paddr, size)) {
-		EMSG("GIC controller base MMU PA mapping failure");
-		return TEE_ERROR_GENERIC;
-	}
-
-	*gic_addr = paddr;
-	return TEE_SUCCESS;
-}
-#endif
-
-#define SVR_MINOR_MASK 0xF
-
-static void get_gic_offset(uint32_t *offsetc, uint32_t *offsetd)
-{
-#ifdef PLATFORM_FLAVOR_ls1043ardb
-	vaddr_t addr = 0;
-	uint32_t rev = 0;
-
-	addr = (vaddr_t)phys_to_virt(DCFG_BASE + DCFG_SVR_OFFSET,
-				     MEM_AREA_IO_NSEC, 1);
-	if (!addr) {
-		EMSG("Failed to get virtual address for SVR register");
-		panic();
-	}
-
-	rev = get_be32((void *)addr);
-
-	if ((rev & SVR_MINOR_MASK) == 1) {
-		*offsetc = GICC_OFFSET_REV1_1;
-		*offsetd = GICD_OFFSET_REV1_1;
-	} else {
-		*offsetc = GICC_OFFSET_REV1;
-		*offsetd = GICD_OFFSET_REV1;
-	}
-#else
-	*offsetc = GICC_OFFSET;
-	*offsetd = GICD_OFFSET;
-#endif
-}
-
 void main_init_gic(void)
 {
-	paddr_t gic_base = 0;
-	uint32_t gicc_offset = 0;
-	uint32_t gicd_offset = 0;
+	vaddr_t gicc_base;
+	vaddr_t gicd_base;
 
-#if defined(PLATFORM_FLAVOR_lx2160aqds) || defined(PLATFORM_FLAVOR_lx2160ardb)
-	if (get_gic_base_addr_from_dt(&gic_base))
-		EMSG("Failed to get GIC base addr from DT");
-#else
-	gic_base = GIC_BASE;
-#endif
-	get_gic_offset(&gicc_offset, &gicd_offset);
+	gicc_base = (vaddr_t)phys_to_virt(GIC_BASE + GICC_OFFSET,
+					  MEM_AREA_IO_SEC);
+	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
+					  MEM_AREA_IO_SEC);
 
-#if defined(CFG_WITH_ARM_TRUSTED_FW)
-	/* On ARMv8, GIC configuration is initialized in ARM-TF */
-	gic_init_base_addr(&gic_data, gic_base + gicc_offset,
-			   gic_base + gicd_offset);
-#else
+	if (!gicc_base || !gicd_base)
+		panic();
+
 	/* Initialize GIC */
-	gic_init(&gic_data, gic_base + gicc_offset, gic_base + gicd_offset);
-#endif
+	gic_init(&gic_data, gicc_base, gicd_base);
 	itr_init(&gic_data.chip);
 }
 
@@ -229,3 +158,43 @@ void main_secondary_init_gic(void)
 {
 	gic_cpu_init(&gic_data);
 }
+
+#ifdef CFG_HW_UNQ_KEY_REQUEST
+
+#include <types_ext.h>
+int get_hw_unique_key(uint64_t smc_func_id, uint64_t in_key, uint64_t size);
+
+/*
+ * Issued when requesting to Secure Storage Key for secure storage.
+ *
+ * SiP Service Calls
+ *
+ * Register usage:
+ * r0/x0	SMC Function ID, OPTEE_SMC_FUNCID_SIP_LS_HW_UNQ_KEY
+ */
+#define OPTEE_SMC_FUNCID_SIP_LS_HW_UNQ_KEY			0xFF14
+#define OPTEE_SMC_FAST_CALL_SIP_LS_HW_UNQ_KEY \
+	OPTEE_SMC_CALL_VAL(OPTEE_SMC_32, OPTEE_SMC_FAST_CALL, \
+			   OPTEE_SMC_OWNER_SIP, \
+			   OPTEE_SMC_FUNCID_SIP_LS_HW_UNQ_KEY)
+
+TEE_Result tee_otp_get_hw_unique_key(struct tee_hw_unique_key *hwkey)
+{
+	TEE_Result res;
+	int ret = 0;
+	uint8_t hw_unq_key[sizeof(hwkey->data)] __aligned(64);
+
+	ret = get_hw_unique_key(OPTEE_SMC_FAST_CALL_SIP_LS_HW_UNQ_KEY,
+			virt_to_phys(hw_unq_key), sizeof(hwkey->data));
+
+	if (ret < 0) {
+		EMSG("\nH/W Unique key is not fetched from the platform.");
+		res = TEE_ERROR_SECURITY;
+	} else {
+		memcpy(&hwkey->data[0], hw_unq_key, sizeof(hwkey->data));
+		res = TEE_SUCCESS;
+	}
+
+	return res;
+}
+#endif

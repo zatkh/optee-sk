@@ -20,9 +20,8 @@ static TEE_Result init_caam(void)
 	uint32_t reg;
 	int i;
 
-	caam = (struct imx_caam_ctrl *)
-		core_mmu_get_va(CAAM_BASE, MEM_AREA_IO_SEC,
-				sizeof(struct imx_caam_ctrl));
+	caam = (struct imx_caam_ctrl *)core_mmu_get_va(CAAM_BASE,
+						       MEM_AREA_IO_SEC);
 	if (!caam)
 		return TEE_ERROR_GENERIC;
 

@@ -12,23 +12,22 @@
 #include <imx.h>
 #include <imx_pm.h>
 #include <imx-regs.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <mm/core_mmu.h>
 #include <mm/core_memprot.h>
 #include <platform_config.h>
 #include <stdint.h>
 #include <sm/optee_smc.h>
 #include <sm/psci.h>
-#include <sm/std_smc.h>
 #include <tee/entry_std.h>
 #include <tee/entry_fast.h>
 
 int psci_features(uint32_t psci_fid)
 {
 	switch (psci_fid) {
-	case ARM_SMCCC_VERSION:
 	case PSCI_PSCI_FEATURES:
 	case PSCI_VERSION:
 	case PSCI_CPU_SUSPEND:
@@ -39,7 +38,6 @@ int psci_features(uint32_t psci_fid)
 	case PSCI_AFFINITY_INFO:
 	case PSCI_SYSTEM_OFF:
 	case PSCI_SYSTEM_RESET:
-	case PSCI_SYSTEM_RESET2:
 		return PSCI_RET_SUCCESS;
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
@@ -56,7 +54,7 @@ int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 		uint32_t context_id)
 {
 	uint32_t val;
-	vaddr_t va = core_mmu_get_va(SRC_BASE, MEM_AREA_IO_SEC, 1);
+	vaddr_t va = core_mmu_get_va(SRC_BASE, MEM_AREA_IO_SEC);
 
 	if (!va)
 		EMSG("No SRC mapping\n");
@@ -65,7 +63,7 @@ int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 		return PSCI_RET_INVALID_PARAMETERS;
 
 	/* set secondary cores' NS entry addresses */
-	boot_set_core_ns_entry(core_idx, entry, context_id);
+	generic_boot_set_core_ns_entry(core_idx, entry, context_id);
 
 	val = virt_to_phys((void *)TEE_TEXT_VA_START);
 
@@ -116,9 +114,8 @@ int __noreturn psci_cpu_off(void)
 int psci_affinity_info(uint32_t affinity,
 		       uint32_t lowest_affnity_level __unused)
 {
-	vaddr_t va = core_mmu_get_va(SRC_BASE, MEM_AREA_IO_SEC, 1);
-	vaddr_t gpr5 = core_mmu_get_va(IOMUXC_BASE, MEM_AREA_IO_SEC,
-				       IOMUXC_GPR5_OFFSET + sizeof(uint32_t)) +
+	vaddr_t va = core_mmu_get_va(SRC_BASE, MEM_AREA_IO_SEC);
+	vaddr_t gpr5 = core_mmu_get_va(IOMUXC_BASE, MEM_AREA_IO_SEC) +
 				       IOMUXC_GPR5_OFFSET;
 	uint32_t cpu, val;
 	bool wfi;
@@ -166,7 +163,7 @@ int psci_affinity_info(uint32_t affinity,
 void __noreturn psci_system_off(void)
 {
 #ifndef CFG_MX7ULP
-	vaddr_t snvs_base = core_mmu_get_va(SNVS_BASE, MEM_AREA_IO_SEC, 1);
+	vaddr_t snvs_base = core_mmu_get_va(SNVS_BASE, MEM_AREA_IO_SEC);
 
 	io_write32(snvs_base + SNVS_LPCR_OFF,
 		   SNVS_LPCR_TOP_MASK |
@@ -238,12 +235,5 @@ int psci_cpu_suspend(uint32_t power_state,
 
 void __noreturn psci_system_reset(void)
 {
-	imx_wdog_restart(true);
-}
-
-int __noreturn psci_system_reset2(uint32_t reset_type __unused,
-				  uint32_t cookie __unused)
-{
-	/* force WDOG reset */
-	imx_wdog_restart(false);
+	imx_wdog_restart();
 }

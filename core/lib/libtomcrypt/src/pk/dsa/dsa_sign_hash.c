@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 #include "tomcrypt_private.h"
 
 /**
@@ -51,7 +58,7 @@ int dsa_sign_hash_raw(const unsigned char *in,  unsigned long inlen,
    }
 
    /* Init our temps */
-   if ((err = mp_init_multi(&k, &kinv, &tmp, LTC_NULL)) != CRYPT_OK)                   { goto ERRBUF; }
+   if ((err = mp_init_multi(&k, &kinv, &tmp, NULL)) != CRYPT_OK)                       { goto ERRBUF; }
 
    qbits = mp_count_bits(key->q);
 retry:
@@ -89,7 +96,7 @@ retry:
 
    err = CRYPT_OK;
 error:
-   mp_clear_multi(k, kinv, tmp, LTC_NULL);
+   mp_clear_multi(k, kinv, tmp, NULL);
 ERRBUF:
 #ifdef LTC_CLEAN_STACK
    zeromem(buf, LTC_MDSA_MAX_GROUP);
@@ -121,7 +128,7 @@ int dsa_sign_hash(const unsigned char *in,  unsigned long inlen,
    LTC_ARGCHK(outlen  != NULL);
    LTC_ARGCHK(key     != NULL);
 
-   if (mp_init_multi(&r, &s, LTC_NULL) != CRYPT_OK) {
+   if (mp_init_multi(&r, &s, NULL) != CRYPT_OK) {
       return CRYPT_MEM;
    }
 
@@ -135,8 +142,12 @@ int dsa_sign_hash(const unsigned char *in,  unsigned long inlen,
                              LTC_ASN1_EOL,     0UL, NULL);
 
 error:
-   mp_clear_multi(r, s, LTC_NULL);
+   mp_clear_multi(r, s, NULL);
    return err;
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

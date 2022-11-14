@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright 2017-2021 NXP
+ * Copyright 2017 NXP
  *
  * Peng Fan <peng.fan@nxp.com>
  */
 
 #include <arm.h>
+#include <arm32.h>
 #include <io.h>
 #include <imx.h>
 #include <mm/core_mmu.h>
@@ -16,19 +17,16 @@
 
 int imx_get_ddr_type(void)
 {
-	uint32_t val = 0;
-	uint32_t off = 0;
+	uint32_t val, off;
 	bool is_mx7 = soc_is_imx7ds();
-	vaddr_t mmdc_base = 0;
+	vaddr_t mmdc_base = core_mmu_get_va(MMDC_P0_BASE, MEM_AREA_IO_SEC);
 
 	if (is_mx7)
 		off = DDRC_MSTR;
 	else
 		off = MMDC_MDMISC;
 
-	mmdc_base = core_mmu_get_va(MMDC_P0_BASE, MEM_AREA_IO_SEC,
-				    off + sizeof(uint32_t));
-	val = io_read32(mmdc_base + off);
+	val =  io_read32(mmdc_base + off);
 
 	if (is_mx7) {
 		if (val & MSTR_DDR3)

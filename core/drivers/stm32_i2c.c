@@ -10,13 +10,11 @@
  */
 
 #include <arm.h>
-#include <drivers/clk.h>
-#include <drivers/clk_dt.h>
 #include <drivers/stm32_i2c.h>
 #include <io.h>
 #include <kernel/delay.h>
 #include <kernel/dt.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/panic.h>
 #include <libfdt.h>
 #include <stdbool.h>
@@ -36,7 +34,6 @@
 #define I2C_PECR			0x20U
 #define I2C_RXDR			0x24U
 #define I2C_TXDR			0x28U
-#define I2C_SIZE			0x2CU
 
 /* Bit definition for I2C_CR1 register */
 #define I2C_CR1_PE			BIT(0)
@@ -156,10 +153,9 @@
 /* Max data size for a single I2C transfer */
 #define MAX_NBYTE_SIZE			255U
 
-#define I2C_NSEC_PER_SEC		1000000000UL
+#define I2C_NSEC_PER_SEC		1000000000L
 #define I2C_TIMEOUT_BUSY_MS		25
 #define I2C_TIMEOUT_BUSY_US		(I2C_TIMEOUT_BUSY_MS * 1000)
-#define I2C_TIMEOUT_RXNE_MS		5
 
 #define CR2_RESET_MASK			(I2C_CR2_SADD | I2C_CR2_HEAD10R | \
 					 I2C_CR2_NBYTES | I2C_CR2_RELOAD | \
@@ -197,12 +193,11 @@
 #define I2C_MEMADD_SIZE_8BIT		1
 #define I2C_MEMADD_SIZE_16BIT		2
 
-/* Effective rate cannot be lower than 80% target rate */
-#define RATE_MIN(rate)			(((rate) * 80U) / 100U)
-
 /*
  * struct i2c_spec_s - Private I2C timing specifications.
  * @rate: I2C bus speed (Hz)
+ * @rate_min: 80% of I2C bus speed (Hz)
+ * @rate_max: 120% of I2C bus speed (Hz)
  * @fall_max: Max fall time of both SDA and SCL signals (ns)
  * @rise_max: Max rise time of both SDA and SCL signals (ns)
  * @hddat_min: Min data hold time (ns)
@@ -213,6 +208,8 @@
  */
 struct i2c_spec_s {
 	uint32_t rate;
+	uint32_t rate_min;
+	uint32_t rate_max;
 	uint32_t fall_max;
 	uint32_t rise_max;
 	uint32_t hddat_min;
@@ -238,11 +235,11 @@ struct i2c_timing_s {
 	bool is_saved;
 };
 
-/* This table must be sorted in increasing value for field @rate */
 static const struct i2c_spec_s i2c_specs[] = {
-	/* Standard - 100KHz */
-	{
+	[I2C_SPEED_STANDARD] = {
 		.rate = I2C_STANDARD_RATE,
+		.rate_min = (I2C_STANDARD_RATE * 80) / 100,
+		.rate_max = (I2C_STANDARD_RATE * 120) / 100,
 		.fall_max = 300,
 		.rise_max = 1000,
 		.hddat_min = 0,
@@ -251,9 +248,10 @@ static const struct i2c_spec_s i2c_specs[] = {
 		.l_min = 4700,
 		.h_min = 4000,
 	},
-	/* Fast - 400KHz */
-	{
+	[I2C_SPEED_FAST] = {
 		.rate = I2C_FAST_RATE,
+		.rate_min = (I2C_FAST_RATE * 80) / 100,
+		.rate_max = (I2C_FAST_RATE * 120) / 100,
 		.fall_max = 300,
 		.rise_max = 300,
 		.hddat_min = 0,
@@ -262,9 +260,10 @@ static const struct i2c_spec_s i2c_specs[] = {
 		.l_min = 1300,
 		.h_min = 600,
 	},
-	/* FastPlus - 1MHz */
-	{
+	[I2C_SPEED_FAST_PLUS] = {
 		.rate = I2C_FAST_PLUS_RATE,
+		.rate_min = (I2C_FAST_PLUS_RATE * 80) / 100,
+		.rate_max = (I2C_FAST_PLUS_RATE * 120) / 100,
 		.fall_max = 100,
 		.rise_max = 120,
 		.hddat_min = 0,
@@ -293,7 +292,7 @@ struct i2c_request {
 
 static vaddr_t get_base(struct i2c_handle_s *hi2c)
 {
-	return io_pa_or_va_secure(&hi2c->base, hi2c->reg_size);
+	return io_pa_or_va_secure(&hi2c->base);
 }
 
 static void notif_i2c_timeout(struct i2c_handle_s *hi2c)
@@ -302,22 +301,11 @@ static void notif_i2c_timeout(struct i2c_handle_s *hi2c)
 	hi2c->i2c_state = I2C_STATE_READY;
 }
 
-static const struct i2c_spec_s *get_specs(uint32_t rate)
-{
-	size_t i = 0;
-
-	for (i = 0; i < ARRAY_SIZE(i2c_specs); i++)
-		if (rate <= i2c_specs[i].rate)
-			return i2c_specs + i;
-
-	return NULL;
-}
-
 static void save_cfg(struct i2c_handle_s *hi2c, struct i2c_cfg *cfg)
 {
 	vaddr_t base = get_base(hi2c);
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	cfg->cr1 = io_read32(base + I2C_CR1);
 	cfg->cr2 = io_read32(base + I2C_CR2);
@@ -325,14 +313,14 @@ static void save_cfg(struct i2c_handle_s *hi2c, struct i2c_cfg *cfg)
 	cfg->oar2 = io_read32(base + I2C_OAR2);
 	cfg->timingr = io_read32(base + I2C_TIMINGR);
 
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 }
 
 static void restore_cfg(struct i2c_handle_s *hi2c, struct i2c_cfg *cfg)
 {
 	vaddr_t base = get_base(hi2c);
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	io_clrbits32(base + I2C_CR1, I2C_CR1_PE);
 	io_write32(base + I2C_TIMINGR, cfg->timingr & TIMINGR_CLEAR_MASK);
@@ -342,31 +330,31 @@ static void restore_cfg(struct i2c_handle_s *hi2c, struct i2c_cfg *cfg)
 	io_write32(base + I2C_CR1, cfg->cr1 & ~I2C_CR1_PE);
 	io_setbits32(base + I2C_CR1, cfg->cr1 & I2C_CR1_PE);
 
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 }
 
 static void __maybe_unused dump_cfg(struct i2c_cfg *cfg __maybe_unused)
 {
-	DMSG("CR1:  %#"PRIx32, cfg->cr1);
-	DMSG("CR2:  %#"PRIx32, cfg->cr2);
-	DMSG("OAR1: %#"PRIx32, cfg->oar1);
-	DMSG("OAR2: %#"PRIx32, cfg->oar2);
-	DMSG("TIM:  %#"PRIx32, cfg->timingr);
+	DMSG("CR1:  0x%" PRIx32, cfg->cr1);
+	DMSG("CR2:  0x%" PRIx32, cfg->cr2);
+	DMSG("OAR1: 0x%" PRIx32, cfg->oar1);
+	DMSG("OAR2: 0x%" PRIx32, cfg->oar2);
+	DMSG("TIM:  0x%" PRIx32, cfg->timingr);
 }
 
 static void __maybe_unused dump_i2c(struct i2c_handle_s *hi2c)
 {
 	vaddr_t __maybe_unused base = get_base(hi2c);
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
-	DMSG("CR1:  %#"PRIx32, io_read32(base + I2C_CR1));
-	DMSG("CR2:  %#"PRIx32, io_read32(base + I2C_CR2));
-	DMSG("OAR1: %#"PRIx32, io_read32(base + I2C_OAR1));
-	DMSG("OAR2: %#"PRIx32, io_read32(base + I2C_OAR2));
-	DMSG("TIM:  %#"PRIx32, io_read32(base + I2C_TIMINGR));
+	DMSG("CR1:  0x%" PRIx32, io_read32(base + I2C_CR1));
+	DMSG("CR2:  0x%" PRIx32, io_read32(base + I2C_CR2));
+	DMSG("OAR1: 0x%" PRIx32, io_read32(base + I2C_OAR1));
+	DMSG("OAR2: 0x%" PRIx32, io_read32(base + I2C_OAR2));
+	DMSG("TIM:  0x%" PRIx32, io_read32(base + I2C_TIMINGR));
 
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 }
 
 /*
@@ -378,10 +366,10 @@ static void __maybe_unused dump_i2c(struct i2c_handle_s *hi2c)
  * Return 0 on success or a negative value
  */
 static int i2c_compute_timing(struct stm32_i2c_init_s *init,
-			      unsigned long clock_src, uint32_t *timing)
+			      uint32_t clock_src, uint32_t *timing)
 {
-	const struct i2c_spec_s *specs = NULL;
-	uint32_t speed_freq = 0;
+	enum i2c_speed_e mode = init->speed_mode;
+	uint32_t speed_freq = i2c_specs[mode].rate;
 	uint32_t i2cbus = UDIV_ROUND_NEAREST(I2C_NSEC_PER_SEC, speed_freq);
 	uint32_t i2cclk = UDIV_ROUND_NEAREST(I2C_NSEC_PER_SEC, clock_src);
 	uint32_t p_prev = I2C_TIMINGR_PRESC_MAX;
@@ -403,26 +391,31 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 	int s = -1;
 	struct i2c_timing_s solutions[I2C_TIMINGR_PRESC_MAX] = { 0 };
 
-	specs = get_specs(init->bus_rate);
-	if (!specs) {
-		DMSG("I2C speed out of bound: %"PRId32"Hz", init->bus_rate);
+	switch (mode) {
+	case I2C_SPEED_STANDARD:
+	case I2C_SPEED_FAST:
+	case I2C_SPEED_FAST_PLUS:
+		break;
+	default:
+		EMSG("I2C speed out of bound {%d/%d}",
+		     mode, I2C_SPEED_FAST_PLUS);
 		return -1;
 	}
 
-	speed_freq = specs->rate;
+	speed_freq = i2c_specs[mode].rate;
 	i2cbus = UDIV_ROUND_NEAREST(I2C_NSEC_PER_SEC, speed_freq);
 	clk_error_prev = INT_MAX;
 
-	if (init->rise_time > specs->rise_max ||
-	    init->fall_time > specs->fall_max) {
-		DMSG("I2C rise{%"PRId32">%"PRId32"}/fall{%"PRId32">%"PRId32"}",
-		     init->rise_time, specs->rise_max,
-		     init->fall_time, specs->fall_max);
+	if ((init->rise_time > i2c_specs[mode].rise_max) ||
+	    (init->fall_time > i2c_specs[mode].fall_max)) {
+		EMSG(" I2C timings out of bound: Rise{%d > %d}/Fall{%d > %d}",
+		     init->rise_time, i2c_specs[mode].rise_max,
+		     init->fall_time, i2c_specs[mode].fall_max);
 		return -1;
 	}
 
 	if (init->digital_filter_coef > STM32_I2C_DIGITAL_FILTER_MAX) {
-		DMSG("DNF out of bound %"PRId8"/%d",
+		EMSG("DNF out of bound %d/%d",
 		     init->digital_filter_coef, STM32_I2C_DIGITAL_FILTER_MAX);
 		return -1;
 	}
@@ -434,17 +427,17 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 	}
 	dnf_delay = init->digital_filter_coef * i2cclk;
 
-	sdadel_min = specs->hddat_min + init->fall_time;
+	sdadel_min = i2c_specs[mode].hddat_min + init->fall_time;
 	delay = af_delay_min - ((init->digital_filter_coef + 3) * i2cclk);
 	if (SUB_OVERFLOW(sdadel_min, delay, &sdadel_min))
 		sdadel_min = 0;
 
-	sdadel_max = specs->vddat_max - init->rise_time;
+	sdadel_max = i2c_specs[mode].vddat_max - init->rise_time;
 	delay = af_delay_max - ((init->digital_filter_coef + 4) * i2cclk);
 	if (SUB_OVERFLOW(sdadel_max, delay, &sdadel_max))
 		sdadel_max = 0;
 
-	scldel_min = init->rise_time + specs->sudat_min;
+	scldel_min = init->rise_time + i2c_specs[mode].sudat_min;
 
 	DMSG("I2C SDADEL(min/max): %u/%u, SCLDEL(Min): %u",
 	     sdadel_min, sdadel_max, scldel_min);
@@ -477,13 +470,13 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 	}
 
 	if (p_prev == I2C_TIMINGR_PRESC_MAX) {
-		DMSG("I2C no Prescaler solution");
+		EMSG(" I2C no Prescaler solution");
 		return -1;
 	}
 
 	tsync = af_delay_min + dnf_delay + (2 * i2cclk);
-	clk_max = I2C_NSEC_PER_SEC / RATE_MIN(specs->rate);
-	clk_min = I2C_NSEC_PER_SEC / specs->rate;
+	clk_max = I2C_NSEC_PER_SEC / i2c_specs[mode].rate_min;
+	clk_min = I2C_NSEC_PER_SEC / i2c_specs[mode].rate_max;
 
 	/*
 	 * Among prescaler possibilities discovered above figures out SCL Low
@@ -504,8 +497,9 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 		for (l = 0; l < I2C_TIMINGR_SCLL_MAX; l++) {
 			uint32_t tscl_l = ((l + 1) * prescaler) + tsync;
 
-			if (tscl_l < specs->l_min ||
-			    i2cclk >= ((tscl_l - af_delay_min - dnf_delay) / 4))
+			if ((tscl_l < i2c_specs[mode].l_min) ||
+			    (i2cclk >=
+			     ((tscl_l - af_delay_min - dnf_delay) / 4)))
 				continue;
 
 			for (h = 0; h < I2C_TIMINGR_SCLH_MAX; h++) {
@@ -514,8 +508,9 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 						init->rise_time +
 						init->fall_time;
 
-				if (tscl >= clk_min && tscl <= clk_max &&
-				    tscl_h >= specs->h_min && i2cclk < tscl_h) {
+				if ((tscl >= clk_min) && (tscl <= clk_max) &&
+				    (tscl_h >= i2c_specs[mode].h_min) &&
+				    (i2cclk < tscl_h)) {
 					int clk_error = tscl - i2cbus;
 
 					if (clk_error < 0)
@@ -533,7 +528,7 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 	}
 
 	if (s < 0) {
-		DMSG("I2C no solution at all");
+		EMSG(" I2C no solution at all");
 		return -1;
 	}
 
@@ -544,44 +539,13 @@ static int i2c_compute_timing(struct stm32_i2c_init_s *init,
 		   I2C_SET_TIMINGR_SCLH(solutions[s].sclh) |
 		   I2C_SET_TIMINGR_SCLL(solutions[s].scll);
 
-	DMSG("I2C TIMINGR (PRESC/SCLDEL/SDADEL): %i/%"PRIu8"/%"PRIu8,
-	     s, solutions[s].scldel, solutions[s].sdadel);
-	DMSG("I2C TIMINGR (SCLH/SCLL): %"PRIu8"/%"PRIu8,
-	     solutions[s].sclh, solutions[s].scll);
-	DMSG("I2C TIMINGR: 0x%"PRIx32, *timing);
+	DMSG("I2C TIMINGR (PRESC/SCLDEL/SDADEL): %i/%i/%i",
+		s, solutions[s].scldel, solutions[s].sdadel);
+	DMSG("I2C TIMINGR (SCLH/SCLL): %i/%i",
+		solutions[s].sclh, solutions[s].scll);
+	DMSG("I2C TIMINGR: 0x%x", *timing);
 
 	return 0;
-}
-
-/* i2c_specs[] must be sorted by increasing rate */
-static bool __maybe_unused i2c_specs_is_consistent(void)
-{
-	size_t i = 0;
-
-	COMPILE_TIME_ASSERT(ARRAY_SIZE(i2c_specs));
-
-	for (i = 1; i < ARRAY_SIZE(i2c_specs); i++)
-		if (i2c_specs[i - 1].rate >= i2c_specs[i].rate)
-			return false;
-
-	return true;
-}
-
-/*
- * @brief  From requested rate, get the closest I2C rate without exceeding it,
- *         within I2C specification values defined in @i2c_specs.
- * @param  rate: The requested rate.
- * @retval Found rate, else the lowest value supported by platform.
- */
-static uint32_t get_lower_rate(uint32_t rate)
-{
-	size_t i = 0;
-
-	for (i = ARRAY_SIZE(i2c_specs); i > 0; i--)
-		if (rate > i2c_specs[i - 1].rate)
-			return i2c_specs[i - 1].rate;
-
-	return i2c_specs[0].rate;
 }
 
 /*
@@ -597,33 +561,21 @@ static int i2c_setup_timing(struct i2c_handle_s *hi2c,
 			    uint32_t *timing)
 {
 	int rc = 0;
-	unsigned long clock_src = 0;
+	uint32_t clock_src = stm32_clock_get_rate(hi2c->clock);
 
-	assert(i2c_specs_is_consistent());
-
-	clock_src = clk_get_rate(hi2c->clock);
 	if (!clock_src) {
-		DMSG("Null I2C clock rate");
+		EMSG("Null I2C clock rate");
 		return -1;
-	}
-
-	/*
-	 * If the timing has already been computed, and the frequency is the
-	 * same as when it was computed, then use the saved timing.
-	 */
-	if (clock_src == hi2c->saved_frequency) {
-		*timing = hi2c->saved_timing;
-		return 0;
 	}
 
 	do {
 		rc = i2c_compute_timing(init, clock_src, timing);
 		if (rc) {
-			DMSG("Failed to compute I2C timings");
-			if (init->bus_rate > I2C_STANDARD_RATE) {
-				init->bus_rate = get_lower_rate(init->bus_rate);
-				IMSG("Downgrade I2C speed to %"PRIu32"Hz)",
-				     init->bus_rate);
+			EMSG("Failed to compute I2C timings");
+			if (init->speed_mode > I2C_SPEED_STANDARD) {
+				init->speed_mode--;
+				IMSG("Downgrade I2C speed to %uHz)",
+				     i2c_specs[init->speed_mode].rate);
 			} else {
 				break;
 			}
@@ -631,19 +583,16 @@ static int i2c_setup_timing(struct i2c_handle_s *hi2c,
 	} while (rc);
 
 	if (rc) {
-		DMSG("Impossible to compute I2C timings");
+		EMSG("Impossible to compute I2C timings");
 		return rc;
 	}
 
-	DMSG("I2C Freq(%"PRIu32"Hz), Clk Source(%lu)",
-	     init->bus_rate, clock_src);
-	DMSG("I2C Rise(%"PRId32") and Fall(%"PRId32") Time",
+	DMSG("I2C Speed Mode(%i), Freq(%i), Clk Source(%i)",
+	     init->speed_mode, i2c_specs[init->speed_mode].rate, clock_src);
+	DMSG("I2C Rise(%i) and Fall(%i) Time",
 	     init->rise_time, init->fall_time);
-	DMSG("I2C Analog Filter(%s), DNF(%"PRIu8")",
+	DMSG("I2C Analog Filter(%s), DNF(%i)",
 	     init->analog_filter ? "On" : "Off", init->digital_filter_coef);
-
-	hi2c->saved_timing = *timing;
-	hi2c->saved_frequency = clock_src;
 
 	return 0;
 }
@@ -682,12 +631,11 @@ static int i2c_config_analog_filter(struct i2c_handle_s *hi2c,
 	return 0;
 }
 
-TEE_Result stm32_i2c_get_setup_from_fdt(void *fdt, int node,
-					struct stm32_i2c_init_s *init,
-					struct stm32_pinctrl **pinctrl,
-					size_t *pinctrl_count)
+int stm32_i2c_get_setup_from_fdt(void *fdt, int node,
+				 struct stm32_i2c_init_s *init,
+				 struct stm32_pinctrl **pinctrl,
+				 size_t *pinctrl_count)
 {
-	TEE_Result res = TEE_ERROR_GENERIC;
 	const fdt32_t *cuint = NULL;
 	struct dt_node_info info = { .status = 0 };
 	int count = 0;
@@ -696,16 +644,11 @@ TEE_Result stm32_i2c_get_setup_from_fdt(void *fdt, int node,
 	memset(init, 0, sizeof(*init));
 
 	_fdt_fill_device_info(fdt, &info, node);
-	assert(info.reg != DT_INFO_INVALID_REG &&
-	       info.reg_size != DT_INFO_INVALID_REG_SIZE);
-
 	init->dt_status = info.status;
 	init->pbase = info.reg;
-	init->reg_size = info.reg_size;
-
-	res = clk_dt_get_by_index(fdt, node, 0, &init->clock);
-	if (res)
-		return res;
+	init->clock = info.clock;
+	assert(info.reg != DT_INFO_INVALID_REG &&
+	       info.clock != DT_INFO_INVALID_CLOCK);
 
 	cuint = fdt_getprop(fdt, node, "i2c-scl-rising-time-ns", NULL);
 	if (cuint)
@@ -721,39 +664,43 @@ TEE_Result stm32_i2c_get_setup_from_fdt(void *fdt, int node,
 
 	cuint = fdt_getprop(fdt, node, "clock-frequency", NULL);
 	if (cuint) {
-		init->bus_rate = fdt32_to_cpu(*cuint);
-
-		if (init->bus_rate > I2C_FAST_PLUS_RATE) {
-			DMSG("Invalid bus speed (%"PRIu32" > %i)",
-			     init->bus_rate, I2C_FAST_PLUS_RATE);
-			return TEE_ERROR_GENERIC;
+		switch (fdt32_to_cpu(*cuint)) {
+		case I2C_STANDARD_RATE:
+			init->speed_mode = I2C_SPEED_STANDARD;
+			break;
+		case I2C_FAST_RATE:
+			init->speed_mode = I2C_SPEED_FAST;
+			break;
+		case I2C_FAST_PLUS_RATE:
+			init->speed_mode = I2C_SPEED_FAST_PLUS;
+			break;
+		default:
+			init->speed_mode = STM32_I2C_SPEED_DEFAULT;
+			break;
 		}
 	} else {
-		init->bus_rate = I2C_STANDARD_RATE;
+		init->speed_mode = STM32_I2C_SPEED_DEFAULT;
 	}
 
 	count = stm32_pinctrl_fdt_get_pinctrl(fdt, node, NULL, 0);
 	if (count <= 0) {
 		*pinctrl = NULL;
-		*pinctrl_count = count;
-		DMSG("Failed to get pinctrl: FDT errno %d", count);
-		return TEE_ERROR_GENERIC;
+		*pinctrl_count = 0;
+		return count;
 	}
 
-	if (count > 2) {
-		DMSG("Too many PINCTRLs found: %zd", count);
-		return TEE_ERROR_GENERIC;
-	}
+	if (count > 2)
+		panic("Too many PINCTRLs found");
 
 	*pinctrl = calloc(count, sizeof(**pinctrl));
 	if (!*pinctrl)
-		return TEE_ERROR_OUT_OF_MEMORY;
+		panic();
 
 	*pinctrl_count = stm32_pinctrl_fdt_get_pinctrl(fdt, node,
 						       *pinctrl, count);
 	assert(*pinctrl_count == (unsigned int)count);
 
-	return TEE_SUCCESS;
+	return 0;
 }
 
 int stm32_i2c_init(struct i2c_handle_s *hi2c,
@@ -766,15 +713,13 @@ int stm32_i2c_init(struct i2c_handle_s *hi2c,
 
 	hi2c->dt_status = init_data->dt_status;
 	hi2c->base.pa = init_data->pbase;
-	hi2c->reg_size = init_data->reg_size;
 	hi2c->clock = init_data->clock;
 
 	rc = i2c_setup_timing(hi2c, init_data, &timing);
 	if (rc)
 		return rc;
 
-	clk_enable(hi2c->clock);
-
+	stm32_clock_enable(hi2c->clock);
 	base = get_base(hi2c);
 	hi2c->i2c_state = I2C_STATE_BUSY;
 
@@ -832,13 +777,9 @@ int stm32_i2c_init(struct i2c_handle_s *hi2c,
 
 	rc = i2c_config_analog_filter(hi2c, init_data->analog_filter);
 	if (rc)
-		DMSG("I2C analog filter error %d", rc);
+		EMSG("I2C analog filter error %d", rc);
 
-	if (IS_ENABLED(CFG_STM32MP13))
-		stm32_gpio_set_secure_cfg(hi2c->pinctrl->bank,
-					  hi2c->pinctrl->pin, true);
-
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 
 	return rc;
 }
@@ -1093,7 +1034,7 @@ static int i2c_write(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	if (!p_data || !size)
 		return -1;
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	timeout_ref = timeout_init_us(I2C_TIMEOUT_BUSY_MS * 1000);
 	if (wait_isr_event(hi2c, I2C_ISR_BUSY, 0, timeout_ref))
@@ -1180,7 +1121,7 @@ static int i2c_write(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	rc = 0;
 
 bail:
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 
 	return rc;
 }
@@ -1226,7 +1167,7 @@ int stm32_i2c_read_write_membyte(struct i2c_handle_s *hi2c, uint16_t dev_addr,
 	if (hi2c->i2c_state != I2C_STATE_READY || !p_data)
 		return -1;
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	timeout_ref = timeout_init_us(I2C_TIMEOUT_BUSY_US);
 	if (wait_isr_event(hi2c, I2C_ISR_BUSY, 0, timeout_ref))
@@ -1283,7 +1224,7 @@ int stm32_i2c_read_write_membyte(struct i2c_handle_s *hi2c, uint16_t dev_addr,
 	rc = 0;
 
 bail:
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 
 	return rc;
 }
@@ -1316,7 +1257,7 @@ static int i2c_read(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	if (!p_data || !size)
 		return -1;
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	timeout_ref = timeout_init_us(I2C_TIMEOUT_BUSY_MS * 1000);
 	if (wait_isr_event(hi2c, I2C_ISR_BUSY, 0, timeout_ref))
@@ -1348,8 +1289,7 @@ static int i2c_read(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	}
 
 	do {
-		if (wait_isr_event(hi2c, I2C_ISR_RXNE, 1,
-				   timeout_init_us(I2C_TIMEOUT_RXNE_MS * 1000)))
+		if (wait_isr_event(hi2c, I2C_ISR_RXNE, 1, timeout_ref))
 			goto bail;
 
 		*p_buff = io_read8(base + I2C_RXDR);
@@ -1385,10 +1325,6 @@ static int i2c_read(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	if (i2c_wait_stop(hi2c, timeout_ref))
 		goto bail;
 
-	/* Clear the NACK generated at the end of the transfer */
-	if ((io_read32(get_base(hi2c) + I2C_ISR) & I2C_ISR_NACKF))
-		io_write32(get_base(hi2c) + I2C_ICR, I2C_ICR_NACKCF);
-
 	io_write32(base + I2C_ICR, I2C_ISR_STOPF);
 
 	io_clrbits32(base + I2C_CR2, CR2_RESET_MASK);
@@ -1398,7 +1334,7 @@ static int i2c_read(struct i2c_handle_s *hi2c, struct i2c_request *request,
 	rc = 0;
 
 bail:
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 
 	return rc;
 }
@@ -1441,7 +1377,7 @@ bool stm32_i2c_is_device_ready(struct i2c_handle_s *hi2c, uint32_t dev_addr,
 	if (hi2c->i2c_state != I2C_STATE_READY)
 		return rc;
 
-	clk_enable(hi2c->clock);
+	stm32_clock_enable(hi2c->clock);
 
 	if (io_read32(base + I2C_ISR) & I2C_ISR_BUSY)
 		goto bail;
@@ -1513,7 +1449,7 @@ bool stm32_i2c_is_device_ready(struct i2c_handle_s *hi2c, uint32_t dev_addr,
 	notif_i2c_timeout(hi2c);
 
 bail:
-	clk_disable(hi2c->clock);
+	stm32_clock_disable(hi2c->clock);
 
 	return rc;
 }
@@ -1535,10 +1471,6 @@ void stm32_i2c_resume(struct i2c_handle_s *hi2c)
 	}
 
 	restore_cfg(hi2c, &hi2c->sec_cfg);
-
-	if (IS_ENABLED(CFG_STM32MP13))
-		stm32_gpio_set_secure_cfg(hi2c->pinctrl->bank,
-					  hi2c->pinctrl->pin, true);
 
 	hi2c->i2c_state = I2C_STATE_READY;
 }

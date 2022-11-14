@@ -19,7 +19,7 @@
 #include "sys.h"
 #include "ta_elf.h"
 
-static size_t mpool_size = 4 * SMALL_PAGE_SIZE;
+static size_t mpool_size = 3 * SMALL_PAGE_SIZE;
 static vaddr_t mpool_base;
 
 static void __printf(2, 0) print_to_console(void *pctx __unused,
@@ -40,11 +40,13 @@ static void __noreturn __maybe_unused dump_ta_state(struct dump_entry_arg *arg)
 	ta_elf_print_mappings(NULL, print_to_console, &main_elf_queue,
 			      arg->num_maps, arg->maps, mpool_base);
 
+#if defined(ARM32) || defined(ARM64)
 	if (arg->is_arm32)
 		ta_elf_stack_trace_a32(arg->arm32.regs);
 	else
 		ta_elf_stack_trace_a64(arg->arm64.fp, arg->arm64.sp,
 				       arg->arm64.pc);
+#endif
 
 	sys_return_cleanup();
 }
@@ -131,7 +133,7 @@ void ldelf(struct ldelf_arg *arg)
 	TEE_Result res = TEE_SUCCESS;
 	struct ta_elf *elf = NULL;
 
-	DMSG("Loading TS %pUl", (void *)&arg->uuid);
+	DMSG("Loading TA %pUl", (void *)&arg->uuid);
 	res = sys_map_zi(mpool_size, 0, &mpool_base, 0, 0);
 	if (res) {
 		EMSG("sys_map_zi(%zu): result %"PRIx32, mpool_size, res);

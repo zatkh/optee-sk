@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /**
  * \file ccm.h
  *
@@ -28,8 +29,7 @@
  * consistent with RFC 3610.
  */
 /*
- *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
+ *  Copyright (C) 2006-2018, Arm Limited (or its affiliates), All Rights Reserved
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may
  *  not use this file except in compliance with the License.
@@ -42,27 +42,20 @@
  *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
+ *
+ *  This file is part of Mbed TLS (https://tls.mbed.org)
  */
 
 #ifndef MBEDTLS_CCM_H
 #define MBEDTLS_CCM_H
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
+#include "cipher.h"
 
-#include "mbedtls/cipher.h"
-
-/** Bad input parameters to the function. */
-#define MBEDTLS_ERR_CCM_BAD_INPUT       -0x000D
-/** Authenticated decryption failed. */
-#define MBEDTLS_ERR_CCM_AUTH_FAILED     -0x000F
+#define MBEDTLS_ERR_CCM_BAD_INPUT       -0x000D /**< Bad input parameters to the function. */
+#define MBEDTLS_ERR_CCM_AUTH_FAILED     -0x000F /**< Authenticated decryption failed. */
 
 /* MBEDTLS_ERR_CCM_HW_ACCEL_FAILED is deprecated and should not be used. */
-/** CCM hardware accelerator failed. */
-#define MBEDTLS_ERR_CCM_HW_ACCEL_FAILED -0x0011
+#define MBEDTLS_ERR_CCM_HW_ACCEL_FAILED -0x0011 /**< CCM hardware accelerator failed. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -151,7 +144,7 @@ void mbedtls_ccm_free( mbedtls_ccm_context *ctx );
  *                  than zero, \p output must be a writable buffer of at least
  *                  that length.
  * \param tag       The buffer holding the authentication field. This must be a
- *                  writable buffer of at least \p tag_len Bytes.
+ *                  readable buffer of at least \p tag_len Bytes.
  * \param tag_len   The length of the authentication field to generate in Bytes:
  *                  4, 6, 8, 10, 12, 14 or 16.
  *
@@ -196,7 +189,7 @@ int mbedtls_ccm_encrypt_and_tag( mbedtls_ccm_context *ctx, size_t length,
  *                  than zero, \p output must be a writable buffer of at least
  *                  that length.
  * \param tag       The buffer holding the authentication field. This must be a
- *                  writable buffer of at least \p tag_len Bytes.
+ *                  readable buffer of at least \p tag_len Bytes.
  * \param tag_len   The length of the authentication field to generate in Bytes:
  *                  0, 4, 6, 8, 10, 12, 14 or 16.
  *

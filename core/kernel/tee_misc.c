@@ -2,14 +2,12 @@
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
-#include <kernel/cache_helpers.h>
-#include <kernel/chip_services.h>
-#include <kernel/tee_common_otp.h>
-#include <kernel/tee_common.h>
-#include <kernel/tee_misc.h>
-#include <malloc.h>
-#include <mm/core_memprot.h>
 #include <stdio.h>
+#include <kernel/tee_common.h>
+#include <kernel/chip_services.h>
+#include <kernel/tee_misc.h>
+#include <mm/core_memprot.h>
+#include <kernel/tee_common_otp.h>
 #include <trace.h>
 
 static uint8_t tee_b2hs_add_base(uint8_t in)
@@ -70,8 +68,8 @@ uint32_t tee_hs2b(uint8_t *hs, uint8_t *b, uint32_t hslen, uint32_t blen)
 	return len;
 }
 
-static bool is_valid_conf_and_notnull_size(paddr_t b, paddr_size_t bl,
-					   paddr_t a, paddr_size_t al)
+static bool is_valid_conf_and_notnull_size(
+		vaddr_t b, size_t bl, vaddr_t a, size_t al)
 {
 	/* invalid config return false */
 	if ((b - 1 + bl < b) || (a - 1 + al < a))
@@ -83,8 +81,7 @@ static bool is_valid_conf_and_notnull_size(paddr_t b, paddr_size_t bl,
 }
 
 /* Returns true when buffer 'b' is fully contained in area 'a' */
-bool core_is_buffer_inside(paddr_t b, paddr_size_t bl,
-			   paddr_t a, paddr_size_t al)
+bool _core_is_buffer_inside(vaddr_t b, size_t bl, vaddr_t a, size_t al)
 {
 	/* invalid config or "null size" return false */
 	if (!is_valid_conf_and_notnull_size(b, bl, a, al))
@@ -96,8 +93,7 @@ bool core_is_buffer_inside(paddr_t b, paddr_size_t bl,
 }
 
 /* Returns true when buffer 'b' is fully contained in area 'a' */
-bool core_is_buffer_outside(paddr_t b, paddr_size_t bl,
-			    paddr_t a, paddr_size_t al)
+bool _core_is_buffer_outside(vaddr_t b, size_t bl, vaddr_t a, size_t al)
 {
 	/* invalid config or "null size" return false */
 	if (!is_valid_conf_and_notnull_size(b, bl, a, al))
@@ -109,8 +105,7 @@ bool core_is_buffer_outside(paddr_t b, paddr_size_t bl,
 }
 
 /* Returns true when buffer 'b' intersects area 'a' */
-bool core_is_buffer_intersect(paddr_t b, paddr_size_t bl,
-			      paddr_t a, paddr_size_t al)
+bool _core_is_buffer_intersect(vaddr_t b, size_t bl, vaddr_t a, size_t al)
 {
 	/* invalid config or "null size" return false */
 	if (!is_valid_conf_and_notnull_size(b, bl, a, al))
@@ -119,23 +114,4 @@ bool core_is_buffer_intersect(paddr_t b, paddr_size_t bl,
 	if ((b + bl - 1 < a) || (b > a + al - 1))
 		return false;
 	return true;
-}
-
-void *alloc_cache_aligned(size_t size)
-{
-	void *ptr = NULL;
-	size_t alloc_size = 0;
-	uint32_t cacheline_size = 0;
-
-	cacheline_size = cache_get_max_line_size();
-	if (ROUNDUP_OVERFLOW(size, cacheline_size, &alloc_size))
-		return NULL;
-
-	ptr = memalign(cacheline_size, alloc_size);
-	if (!ptr)
-		return NULL;
-
-	memset(ptr, 0, size);
-
-	return ptr;
 }

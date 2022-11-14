@@ -67,16 +67,10 @@
 
 #elif defined(PLATFORM_FLAVOR_qemu_armv8a)
 
-#define GIC_BASE		0x08000000
 #define UART0_BASE		0x09000000
 #define UART1_BASE		0x09040000
 
-#define IT_UART1		40
-
 #define CONSOLE_UART_BASE	UART1_BASE
-#define IT_CONSOLE_UART		IT_UART1
-
-#define TPM2_BASE		0x0c000000
 
 #else
 #error "Unknown platform flavor"
@@ -125,9 +119,6 @@
 #define GICC_OFFSET		0x10000
 
 #elif defined(PLATFORM_FLAVOR_qemu_armv8a)
-
-#define GICD_OFFSET		0
-#define GICC_OFFSET		0x10000
 
 #else
 #error "Unknown platform flavor"

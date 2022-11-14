@@ -33,9 +33,10 @@
 #include <drivers/cdns_uart.h>
 #include <drivers/gic.h>
 #include <io.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/tz_ssvce_pl310.h>
 #include <mm/core_mmu.h>
 #include <mm/core_memprot.h>
@@ -43,6 +44,16 @@
 #include <platform_smc.h>
 #include <stdint.h>
 #include <tee/entry_fast.h>
+#include <tee/entry_std.h>
+
+static const struct thread_handlers handlers = {
+	.cpu_on = pm_panic,
+	.cpu_off = pm_panic,
+	.cpu_suspend = pm_panic,
+	.cpu_resume = pm_panic,
+	.system_off = pm_panic,
+	.system_reset = pm_panic,
+};
 
 static struct gic_data gic_data;
 static struct cdns_uart_data console_data;
@@ -52,6 +63,11 @@ register_phys_mem_pgdir(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE,
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, GIC_BASE, CORE_MMU_PGDIR_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, PL310_BASE, CORE_MMU_PGDIR_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, SLCR_BASE, CORE_MMU_PGDIR_SIZE);
+
+const struct thread_handlers *generic_boot_get_handlers(void)
+{
+	return &handlers;
+}
 
 void plat_primary_init_early(void)
 {
@@ -77,7 +93,7 @@ void plat_primary_init_early(void)
 	io_write32(SECURITY4_QSPI, ACCESS_BITS_ALL);
 	io_write32(SECURITY6_APB_SLAVES, ACCESS_BITS_ALL);
 
-	io_write32(SLCR_UNLOCK, SLCR_UNLOCK_MAGIC);
+	io_write32(SLCR_UNLOCK_MAGIC, SLCR_UNLOCK);
 
 	io_write32(SLCR_TZ_DDR_RAM, ACCESS_BITS_ALL);
 	io_write32(SLCR_TZ_DMA_NS, ACCESS_BITS_ALL);
@@ -102,7 +118,7 @@ vaddr_t pl310_base(void)
 
 	if (cpu_mmu_enabled()) {
 		if (!va)
-			va = phys_to_virt(PL310_BASE, MEM_AREA_IO_SEC, 1);
+			va = phys_to_virt(PL310_BASE, MEM_AREA_IO_SEC);
 		return (vaddr_t)va;
 	}
 	return PL310_BASE;
@@ -144,7 +160,19 @@ void arm_cl2_enable(vaddr_t pl310_base)
 
 void main_init_gic(void)
 {
-	gic_init(&gic_data, GIC_BASE + GICC_OFFSET, GIC_BASE + GICD_OFFSET);
+	vaddr_t gicc_base;
+	vaddr_t gicd_base;
+
+	gicc_base = (vaddr_t)phys_to_virt(GIC_BASE + GICC_OFFSET,
+					  MEM_AREA_IO_SEC);
+	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
+					  MEM_AREA_IO_SEC);
+
+	if (!gicc_base || !gicd_base)
+		panic();
+
+	/* Initialize GIC */
+	gic_init(&gic_data, gicc_base, gicd_base);
 	itr_init(&gic_data.chip);
 }
 
@@ -171,9 +199,7 @@ static uint32_t write_slcr(uint32_t addr, uint32_t val)
 
 			if (!va)
 				va = (vaddr_t)phys_to_virt(SLCR_BASE,
-							   MEM_AREA_IO_SEC,
-							   addr +
-							   sizeof(uint32_t));
+							   MEM_AREA_IO_SEC);
 			io_write32(va + addr, val);
 			return OPTEE_SMC_RETURN_OK;
 		}
@@ -192,9 +218,7 @@ static uint32_t read_slcr(uint32_t addr, uint32_t *val)
 
 			if (!va)
 				va = (vaddr_t)phys_to_virt(SLCR_BASE,
-							   MEM_AREA_IO_SEC,
-							   addr +
-							   sizeof(uint32_t));
+							   MEM_AREA_IO_SEC);
 			*val = io_read32(va + addr);
 			return OPTEE_SMC_RETURN_OK;
 		}

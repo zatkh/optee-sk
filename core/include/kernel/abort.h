@@ -1,16 +1,15 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2015-2021, Linaro Limited
+ * Copyright (c) 2015, Linaro Limited
  */
 
 #ifndef KERNEL_ABORT_H
 #define KERNEL_ABORT_H
 
-#define ABORT_TYPE_UNDEF		0
-#define ABORT_TYPE_PREFETCH		1
-#define ABORT_TYPE_DATA			2
-/* Dump stack on user mode panic (not an abort) */
-#define ABORT_TYPE_USER_MODE_PANIC	3
+#define ABORT_TYPE_UNDEF	0
+#define ABORT_TYPE_PREFETCH	1
+#define ABORT_TYPE_DATA		2
+#define ABORT_TYPE_TA_PANIC	3 /* Dump stack on TA panic (not an abort) */
 
 #ifndef __ASSEMBLER__
 
@@ -34,10 +33,8 @@ void abort_handler(uint32_t abort_type, struct thread_abort_regs *regs);
 
 bool abort_is_user_exception(struct abort_info *ai);
 
-bool abort_is_write_fault(struct abort_info *ai);
-
 /* Called from a normal thread */
-void abort_print_current_ts(void);
+void abort_print_current_ta(void);
 
 #endif /*__ASSEMBLER__*/
 #endif /*KERNEL_ABORT_H*/

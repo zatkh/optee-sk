@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
- * Copyright (c) 2021, SumUp Services GmbH
  */
 #ifndef UTEE_DEFINES_H
 #define UTEE_DEFINES_H
@@ -32,14 +31,12 @@
 #define TEE_MAIN_ALGO_DH         0x32
 #define TEE_MAIN_ALGO_ECDSA      0x41
 #define TEE_MAIN_ALGO_ECDH       0x42
-#define TEE_MAIN_ALGO_ED25519    0x43
 #define TEE_MAIN_ALGO_SM2_DSA_SM3 0x45 /* Not in v1.2 spec */
 #define TEE_MAIN_ALGO_SM2_KEP    0x46 /* Not in v1.2 spec */
 #define TEE_MAIN_ALGO_SM2_PKE    0x47 /* Not in v1.2 spec */
 #define TEE_MAIN_ALGO_HKDF       0xC0 /* OP-TEE extension */
 #define TEE_MAIN_ALGO_CONCAT_KDF 0xC1 /* OP-TEE extension */
 #define TEE_MAIN_ALGO_PBKDF2     0xC2 /* OP-TEE extension */
-#define TEE_MAIN_ALGO_X25519     0x44 /* Not in v1.2 spec */
 
 
 #define TEE_CHAIN_MODE_ECB_NOPAD        0x0
@@ -62,8 +59,6 @@ static inline uint32_t __tee_alg_get_class(uint32_t algo)
 		return TEE_OPERATION_KEY_DERIVATION;
 	if (algo == TEE_ALG_RSASSA_PKCS1_V1_5)
 		return TEE_OPERATION_ASYMMETRIC_SIGNATURE;
-	if (algo == TEE_ALG_DES3_CMAC)
-		return TEE_OPERATION_MAC;
 
 	return (algo >> 28) & 0xF; /* Bits [31:28] */
 }
@@ -77,10 +72,6 @@ static inline uint32_t __tee_alg_get_main_alg(uint32_t algo)
 		return TEE_MAIN_ALGO_SM2_PKE;
 	case TEE_ALG_SM2_KEP:
 		return TEE_MAIN_ALGO_SM2_KEP;
-	case TEE_ALG_X25519:
-		return TEE_MAIN_ALGO_X25519;
-	case TEE_ALG_ED25519:
-		return TEE_MAIN_ALGO_ED25519;
 	default:
 		break;
 	}
@@ -176,51 +167,6 @@ typedef enum {
 #define TEE_MAC_SIZE_AES_CBC_MAC_PKCS5
 #define TEE_MAC_SIZE_AES_CMAC
 #define TEE_MAC_SIZE_DES_CBC_MAC_PKCS5
-
-static inline size_t __tee_alg_get_digest_size(uint32_t algo)
-{
-	switch (algo) {
-	case TEE_ALG_MD5:
-	case TEE_ALG_HMAC_MD5:
-		return TEE_MD5_HASH_SIZE;
-	case TEE_ALG_SHA1:
-	case TEE_ALG_HMAC_SHA1:
-	case TEE_ALG_DSA_SHA1:
-		return TEE_SHA1_HASH_SIZE;
-	case TEE_ALG_SHA224:
-	case TEE_ALG_HMAC_SHA224:
-	case TEE_ALG_DSA_SHA224:
-		return TEE_SHA224_HASH_SIZE;
-	case TEE_ALG_SHA256:
-	case TEE_ALG_HMAC_SHA256:
-	case TEE_ALG_DSA_SHA256:
-		return TEE_SHA256_HASH_SIZE;
-	case TEE_ALG_SHA384:
-	case TEE_ALG_HMAC_SHA384:
-		return TEE_SHA384_HASH_SIZE;
-	case TEE_ALG_SHA512:
-	case TEE_ALG_HMAC_SHA512:
-		return TEE_SHA512_HASH_SIZE;
-	case TEE_ALG_SM3:
-	case TEE_ALG_HMAC_SM3:
-		return TEE_SM3_HASH_SIZE;
-	case TEE_ALG_AES_CBC_MAC_NOPAD:
-	case TEE_ALG_AES_CBC_MAC_PKCS5:
-	case TEE_ALG_AES_CMAC:
-		return TEE_AES_BLOCK_SIZE;
-	case TEE_ALG_DES_CBC_MAC_NOPAD:
-	case TEE_ALG_DES_CBC_MAC_PKCS5:
-	case TEE_ALG_DES3_CBC_MAC_NOPAD:
-	case TEE_ALG_DES3_CBC_MAC_PKCS5:
-	case TEE_ALG_DES3_CMAC:
-		return TEE_DES_BLOCK_SIZE;
-	default:
-		return 0;
-	}
-}
-
-	/* Return algorithm digest size */
-#define TEE_ALG_GET_DIGEST_SIZE(algo) __tee_alg_get_digest_size(algo)
 
 /*
  * Bit indicating that the attribute is a value attribute

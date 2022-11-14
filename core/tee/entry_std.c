@@ -11,13 +11,13 @@
 #include <io.h>
 #include <kernel/linker.h>
 #include <kernel/msg_param.h>
-#include <kernel/notif.h>
 #include <kernel/panic.h>
 #include <kernel/tee_misc.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
 #include <mm/mobj.h>
 #include <optee_msg.h>
+#include <sm/optee_smc.h>
 #include <string.h>
 #include <tee/entry_std.h>
 #include <tee/tee_cryp_utl.h>
@@ -25,8 +25,7 @@
 #include <util.h>
 
 #define SHM_CACHE_ATTRS	\
-	(uint32_t)(core_mmu_is_shm_cached() ? \
-		   TEE_MATTR_MEM_TYPE_CACHED : TEE_MATTR_MEM_TYPE_DEV)
+	(uint32_t)(core_mmu_is_shm_cached() ?  OPTEE_SMC_SHM_CACHED : 0)
 
 /* Sessions opened from normal world */
 static struct tee_ta_session_head tee_open_sessions =
@@ -39,7 +38,10 @@ static struct mobj *shm_mobj;
 static struct mobj **sdp_mem_mobjs;
 #endif
 
+#if !defined(X64)
+// TODO: Enable for x64.
 static unsigned int session_pnum;
+#endif
 
 static bool __maybe_unused param_mem_from_mobj(struct param_mem *mem,
 					       struct mobj *mobj,
@@ -60,40 +62,6 @@ static bool __maybe_unused param_mem_from_mobj(struct param_mem *mem,
 	return true;
 }
 
-#ifdef CFG_CORE_FFA
-static TEE_Result set_fmem_param(const struct optee_msg_param_fmem *fmem,
-				 struct param_mem *mem)
-{
-	size_t req_size = 0;
-	uint64_t global_id = READ_ONCE(fmem->global_id);
-	size_t sz = READ_ONCE(fmem->size);
-
-	if (global_id == OPTEE_MSG_FMEM_INVALID_GLOBAL_ID && !sz) {
-		mem->mobj = NULL;
-		mem->offs = 0;
-		mem->size = 0;
-		return TEE_SUCCESS;
-	}
-	mem->mobj = mobj_ffa_get_by_cookie(global_id,
-					   READ_ONCE(fmem->internal_offs));
-	if (!mem->mobj)
-		return TEE_ERROR_BAD_PARAMETERS;
-
-	mem->offs = reg_pair_to_64(READ_ONCE(fmem->offs_high),
-				   READ_ONCE(fmem->offs_low));
-	mem->size = sz;
-
-	/*
-	 * Check that the supplied offset and size is covered by the
-	 * previously verified MOBJ.
-	 */
-	if (ADD_OVERFLOW(mem->offs, mem->size, &req_size) ||
-	    mem->mobj->size < req_size)
-		return TEE_ERROR_SECURITY;
-
-	return TEE_SUCCESS;
-}
-#else /*!CFG_CORE_FFA*/
 /* fill 'struct param_mem' structure if buffer matches a valid memory object */
 static TEE_Result set_tmem_param(const struct optee_msg_param_tmem *tmem,
 				 uint32_t attr, struct param_mem *mem)
@@ -102,10 +70,8 @@ static TEE_Result set_tmem_param(const struct optee_msg_param_tmem *tmem,
 	paddr_t pa = READ_ONCE(tmem->buf_ptr);
 	size_t sz = READ_ONCE(tmem->size);
 
-	/*
-	 * Handle NULL memory reference
-	 */
-	if (!pa) {
+	/* Handle NULL memory reference */
+	if (!pa && !sz) {
 		mem->mobj = NULL;
 		mem->offs = 0;
 		mem->size = 0;
@@ -147,14 +113,13 @@ static TEE_Result set_rmem_param(const struct optee_msg_param_rmem *rmem,
 {
 	size_t req_size = 0;
 	uint64_t shm_ref = READ_ONCE(rmem->shm_ref);
-	size_t sz = READ_ONCE(rmem->size);
 
 	mem->mobj = mobj_reg_shm_get_by_cookie(shm_ref);
 	if (!mem->mobj)
 		return TEE_ERROR_BAD_PARAMETERS;
 
 	mem->offs = READ_ONCE(rmem->offs);
-	mem->size = sz;
+	mem->size = READ_ONCE(rmem->size);
 
 	/*
 	 * Check that the supplied offset and size is covered by the
@@ -166,8 +131,7 @@ static TEE_Result set_rmem_param(const struct optee_msg_param_rmem *rmem,
 
 	return TEE_SUCCESS;
 }
-#endif /*CFG_CORE_DYN_SHM*/
-#endif /*!CFG_CORE_FFA*/
+#endif
 
 static TEE_Result copy_in_params(const struct optee_msg_param *params,
 				 uint32_t num_params,
@@ -204,18 +168,6 @@ static TEE_Result copy_in_params(const struct optee_msg_param *params,
 			ta_param->u[n].val.a = READ_ONCE(params[n].u.value.a);
 			ta_param->u[n].val.b = READ_ONCE(params[n].u.value.b);
 			break;
-#ifdef CFG_CORE_FFA
-		case OPTEE_MSG_ATTR_TYPE_FMEM_INPUT:
-		case OPTEE_MSG_ATTR_TYPE_FMEM_OUTPUT:
-		case OPTEE_MSG_ATTR_TYPE_FMEM_INOUT:
-			res = set_fmem_param(&params[n].u.fmem,
-					     &ta_param->u[n].mem);
-			if (res)
-				return res;
-			pt[n] = TEE_PARAM_TYPE_MEMREF_INPUT + attr -
-				OPTEE_MSG_ATTR_TYPE_FMEM_INPUT;
-			break;
-#else /*!CFG_CORE_FFA*/
 		case OPTEE_MSG_ATTR_TYPE_TMEM_INPUT:
 		case OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT:
 		case OPTEE_MSG_ATTR_TYPE_TMEM_INOUT:
@@ -237,8 +189,7 @@ static TEE_Result copy_in_params(const struct optee_msg_param *params,
 			pt[n] = TEE_PARAM_TYPE_MEMREF_INPUT + attr -
 				OPTEE_MSG_ATTR_TYPE_RMEM_INPUT;
 			break;
-#endif /*CFG_CORE_DYN_SHM*/
-#endif /*!CFG_CORE_FFA*/
+#endif
 		default:
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
@@ -254,7 +205,7 @@ static void cleanup_shm_refs(const uint64_t *saved_attr,
 {
 	size_t n;
 
-	for (n = 0; n < MIN((unsigned int)TEE_NUM_PARAMS, num_params); n++) {
+	for (n = 0; n < num_params; n++) {
 		switch (saved_attr[n]) {
 		case OPTEE_MSG_ATTR_TYPE_TMEM_INPUT:
 		case OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT:
@@ -330,7 +281,6 @@ static TEE_Result get_open_session_meta(size_t num_params,
 	clnt_id->login = params[1].u.value.c;
 	switch (clnt_id->login) {
 	case TEE_LOGIN_PUBLIC:
-	case TEE_LOGIN_REE_KERNEL:
 		memset(&clnt_id->uuid, 0, sizeof(clnt_id->uuid));
 		break;
 	case TEE_LOGIN_USER:
@@ -381,9 +331,13 @@ static void entry_open_session(struct optee_msg_arg *arg, uint32_t num_params)
 	 * The occurrence of open/close session command is usually
 	 * un-predictable, using this property to increase randomness
 	 * of prng
+	 * 
+	 * TODO: Enable on x64
 	 */
+#if !defined(X64)
 	plat_prng_add_jitter_entropy(CRYPTO_RNG_SRC_JITTER_SESSION,
 				     &session_pnum);
+#endif
 
 cleanup_shm_refs:
 	cleanup_shm_refs(saved_attr, &param, num_params - num_meta);
@@ -407,8 +361,11 @@ static void entry_close_session(struct optee_msg_arg *arg, uint32_t num_params)
 		goto out;
 	}
 
+	/* TODO: Enable on x64 */
+#if !defined(X64)
 	plat_prng_add_jitter_entropy(CRYPTO_RNG_SRC_JITTER_SESSION,
 				     &session_pnum);
+#endif
 
 	s = tee_ta_find_session(arg->session, &tee_open_sessions);
 	res = tee_ta_close_session(s, &tee_open_sessions, NSAPP_IDENTITY);
@@ -478,13 +435,9 @@ out:
 	arg->ret_origin = err_orig;
 }
 
-#ifndef CFG_CORE_FFA
 #ifdef CFG_CORE_DYN_SHM
 static void register_shm(struct optee_msg_arg *arg, uint32_t num_params)
 {
-	struct optee_msg_param_tmem *tmem = NULL;
-	struct mobj *mobj = NULL;
-
 	arg->ret = TEE_ERROR_BAD_PARAMETERS;
 
 	if (num_params != 1 ||
@@ -492,9 +445,10 @@ static void register_shm(struct optee_msg_arg *arg, uint32_t num_params)
 	     (OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT | OPTEE_MSG_ATTR_NONCONTIG)))
 		return;
 
-	tmem = &arg->params[0].u.tmem;
-	mobj = msg_param_mobj_from_noncontig(tmem->buf_ptr, tmem->size,
-					     tmem->shm_ref, false);
+	struct optee_msg_param_tmem *tmem = &arg->params[0].u.tmem;
+	struct mobj *mobj = msg_param_mobj_from_noncontig(tmem->buf_ptr,
+							  tmem->size,
+							  tmem->shm_ref, false);
 
 	if (!mobj)
 		return;
@@ -518,7 +472,6 @@ static void unregister_shm(struct optee_msg_arg *arg, uint32_t num_params)
 	}
 }
 #endif /*CFG_CORE_DYN_SHM*/
-#endif
 
 void nsec_sessions_list_head(struct tee_ta_session_head **open_sessions)
 {
@@ -526,7 +479,7 @@ void nsec_sessions_list_head(struct tee_ta_session_head **open_sessions)
 }
 
 /* Note: this function is weak to let platforms add special handling */
-TEE_Result __weak tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
+uint32_t __weak tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 {
 	return __tee_entry_std(arg, num_params);
 }
@@ -535,9 +488,9 @@ TEE_Result __weak tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
  * If tee_entry_std() is overridden, it's still supposed to call this
  * function.
  */
-TEE_Result __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
+uint32_t __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 {
-	TEE_Result res = TEE_SUCCESS;
+	uint32_t rv = OPTEE_SMC_RETURN_OK;
 
 	/* Enable foreign interrupts for STD calls */
 	thread_set_foreign_intr(true);
@@ -554,7 +507,6 @@ TEE_Result __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 	case OPTEE_MSG_CMD_CANCEL:
 		entry_cancel(arg, num_params);
 		break;
-#ifndef CFG_CORE_FFA
 #ifdef CFG_CORE_DYN_SHM
 	case OPTEE_MSG_CMD_REGISTER_SHM:
 		register_shm(arg, num_params);
@@ -563,28 +515,12 @@ TEE_Result __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 		unregister_shm(arg, num_params);
 		break;
 #endif
-#endif
-
-	case OPTEE_MSG_CMD_DO_BOTTOM_HALF:
-		if (IS_ENABLED(CFG_CORE_ASYNC_NOTIF))
-			notif_deliver_event(NOTIF_EVENT_DO_BOTTOM_HALF);
-		else
-			goto err;
-		break;
-	case OPTEE_MSG_CMD_STOP_ASYNC_NOTIF:
-		if (IS_ENABLED(CFG_CORE_ASYNC_NOTIF))
-			notif_deliver_event(NOTIF_EVENT_STOPPED);
-		else
-			goto err;
-		break;
-
 	default:
-err:
 		EMSG("Unknown cmd 0x%x", arg->cmd);
-		res = TEE_ERROR_NOT_IMPLEMENTED;
+		rv = OPTEE_SMC_RETURN_EBADCMD;
 	}
 
-	return res;
+	return rv;
 }
 
 static TEE_Result default_mobj_init(void)

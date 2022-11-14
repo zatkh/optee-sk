@@ -26,14 +26,11 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <arm32.h>
-#include <initcall.h>
 #include <io.h>
-#include <kernel/pm.h>
-#include <kernel/panic.h>
-#include <matrix.h>
-#include <platform_config.h>
 #include <sama5d2.h>
+#include <platform_config.h>
 #include <stdint.h>
+#include <matrix.h>
 #include <tz_matrix.h>
 #include <trace.h>
 
@@ -45,12 +42,6 @@
 #define SECURITY_TYPE_NS	2
 #define SECURITY_TYPE_PS	3
 
-#define WORLD_NON_SECURE	0
-#define WORLD_SECURE		1
-
-#define MATRIX_SPSELR_COUNT	3
-#define MATRIX_SLAVE_COUNT	15
-
 struct peri_security {
 	unsigned int peri_id;
 	unsigned int matrix;
@@ -58,8 +49,12 @@ struct peri_security {
 };
 
 static const struct peri_security peri_security_array[] = {
+	/*
+	 * AT91C_ID_1 - This is a undocumented bit in the datasheet.
+	 * However needs to be set for Linux to boot in "normal world"
+	 */
 	{
-		.peri_id = AT91C_ID_PMC,
+		.peri_id = AT91C_ID_1,
 		.matrix = MATRIX_H64MX,
 		.security_type = SECURITY_TYPE_PS,
 	},
@@ -476,8 +471,7 @@ static const struct peri_security *get_peri_security(unsigned int peri_id)
 	return NULL;
 }
 
-static int matrix_set_periph_world(unsigned int matrix, unsigned int peri_id,
-				   unsigned int world)
+static int matrix_set_peri_security(unsigned int matrix, unsigned int peri_id)
 {
 	unsigned int base;
 	unsigned int spselr;
@@ -490,6 +484,10 @@ static int matrix_set_periph_world(unsigned int matrix, unsigned int peri_id,
 
 	bit = (0x01 << (peri_id % 32));
 
+	/* The Peripheral ID to SPSELR register bit mapping breaks at ID 73 */
+	if (peri_id > AT91C_ID_SDMMC1_TIMER)
+		bit = bit >> 1;
+
 	if (matrix == MATRIX_H32MX)
 		base = matrix32_base();
 	else if (matrix == MATRIX_H64MX)
@@ -498,28 +496,14 @@ static int matrix_set_periph_world(unsigned int matrix, unsigned int peri_id,
 		return -1;
 
 	spselr = matrix_read(base, MATRIX_SPSELR(idx));
-	if (world == WORLD_SECURE)
-		spselr &= ~bit;
-	else
-		spselr |= bit;
+	spselr |= bit;
 	matrix_write(base, MATRIX_SPSELR(idx), spselr);
 
 	return 0;
 }
 
-int matrix_configure_periph_secure(unsigned int peri_id)
-{
-	const struct peri_security *psec = NULL;
-
-	psec = get_peri_security(peri_id);
-	if (!psec)
-		return -1;
-
-	return matrix_set_periph_world(psec->matrix, peri_id, WORLD_SECURE);
-}
-
-int matrix_configure_periph_non_secure(unsigned int *peri_id_array,
-				       unsigned int size)
+int matrix_configure_peri_security(unsigned int *peri_id_array,
+				   unsigned int size)
 {
 	unsigned int i;
 	unsigned int *peri_id_p;
@@ -542,8 +526,7 @@ int matrix_configure_periph_non_secure(unsigned int *peri_id_array,
 
 		matrix = peripheral_sec->matrix;
 		peri_id = *peri_id_p;
-		ret = matrix_set_periph_world(matrix, peri_id,
-					      WORLD_NON_SECURE);
+		ret = matrix_set_peri_security(matrix, peri_id);
 		if (ret)
 			return -1;
 
@@ -552,95 +535,3 @@ int matrix_configure_periph_non_secure(unsigned int *peri_id_array,
 
 	return 0;
 }
-
-#ifdef CFG_PM_ARM32
-struct matrix_state {
-	uint32_t spselr[MATRIX_SPSELR_COUNT];
-	uint32_t ssr[MATRIX_SLAVE_COUNT];
-	uint32_t srtsr[MATRIX_SLAVE_COUNT];
-	uint32_t sassr[MATRIX_SLAVE_COUNT];
-	uint32_t meier;
-	uint32_t meimr;
-};
-
-static struct matrix_state matrix32_state;
-static struct matrix_state matrix64_state;
-
-static void matrix_save_regs(vaddr_t base, struct matrix_state *state)
-{
-	int idx = 0;
-
-	for (idx = 0; idx < MATRIX_SPSELR_COUNT; idx++)
-		state->spselr[idx] = matrix_read(base, MATRIX_SPSELR(idx));
-
-	for (idx = 0; idx < MATRIX_SLAVE_COUNT; idx++) {
-		state->ssr[idx] = matrix_read(base, MATRIX_SSR(idx));
-		state->srtsr[idx] = matrix_read(base, MATRIX_SRTSR(idx));
-		state->sassr[idx] = matrix_read(base, MATRIX_SASSR(idx));
-	}
-
-	state->meier = matrix_read(base, MATRIX_MEIER);
-	state->meimr = matrix_read(base, MATRIX_MEIMR);
-}
-
-static void matrix_suspend(void)
-{
-	matrix_save_regs(matrix32_base(), &matrix32_state);
-	matrix_save_regs(matrix64_base(), &matrix64_state);
-}
-
-static void matrix_restore_regs(vaddr_t base, struct matrix_state *state)
-{
-	int idx = 0;
-
-	matrix_write_protect_disable(base);
-
-	for (idx = 0; idx < MATRIX_SPSELR_COUNT; idx++)
-		matrix_write(base, MATRIX_SPSELR(idx), state->spselr[idx]);
-
-	for (idx = 0; idx < MATRIX_SLAVE_COUNT; idx++) {
-		matrix_write(base, MATRIX_SSR(idx), state->ssr[idx]);
-		matrix_write(base, MATRIX_SRTSR(idx), state->srtsr[idx]);
-		matrix_write(base, MATRIX_SASSR(idx), state->sassr[idx]);
-	}
-
-	matrix_write(base, MATRIX_MEIER, state->meier);
-	matrix_write(base, MATRIX_MEIMR, state->meimr);
-}
-
-static void matrix_resume(void)
-{
-	matrix_restore_regs(matrix32_base(), &matrix32_state);
-	matrix_restore_regs(matrix64_base(), &matrix64_state);
-}
-
-static TEE_Result matrix_pm(enum pm_op op, uint32_t pm_hint __unused,
-			    const struct pm_callback_handle *hdl __unused)
-{
-	switch (op) {
-	case PM_OP_RESUME:
-		matrix_resume();
-		break;
-	case PM_OP_SUSPEND:
-		matrix_suspend();
-		break;
-	default:
-		panic("Invalid PM operation");
-	}
-
-	return TEE_SUCCESS;
-}
-
-static TEE_Result matrix_pm_init(void)
-{
-	/*
-	 * We can't call matrix_register_pm in matrix_init since allocator is
-	 * not ready yet so we just call it later in this driver init callback.
-	 */
-	register_pm_driver_cb(matrix_pm, NULL, "sam-matrix");
-
-	return TEE_SUCCESS;
-}
-driver_init(matrix_pm_init);
-
-#endif

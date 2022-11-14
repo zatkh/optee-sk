@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright (c) 2015-2020, Linaro Limited
+ * Copyright (c) 2015-2017, Linaro Limited
  */
 #ifndef _OPTEE_MSG_H
 #define _OPTEE_MSG_H
@@ -18,19 +18,16 @@
  * Part 1 - formatting of messages
  *****************************************************************************/
 
-#define OPTEE_MSG_ATTR_TYPE_NONE		U(0x0)
-#define OPTEE_MSG_ATTR_TYPE_VALUE_INPUT		U(0x1)
-#define OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT	U(0x2)
-#define OPTEE_MSG_ATTR_TYPE_VALUE_INOUT		U(0x3)
-#define OPTEE_MSG_ATTR_TYPE_RMEM_INPUT		U(0x5)
-#define OPTEE_MSG_ATTR_TYPE_RMEM_OUTPUT		U(0x6)
-#define OPTEE_MSG_ATTR_TYPE_RMEM_INOUT		U(0x7)
-#define OPTEE_MSG_ATTR_TYPE_FMEM_INPUT		OPTEE_MSG_ATTR_TYPE_RMEM_INPUT
-#define OPTEE_MSG_ATTR_TYPE_FMEM_OUTPUT		OPTEE_MSG_ATTR_TYPE_RMEM_OUTPUT
-#define OPTEE_MSG_ATTR_TYPE_FMEM_INOUT		OPTEE_MSG_ATTR_TYPE_RMEM_INOUT
-#define OPTEE_MSG_ATTR_TYPE_TMEM_INPUT		U(0x9)
-#define OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT		U(0xa)
-#define OPTEE_MSG_ATTR_TYPE_TMEM_INOUT		U(0xb)
+#define OPTEE_MSG_ATTR_TYPE_NONE		0x0
+#define OPTEE_MSG_ATTR_TYPE_VALUE_INPUT		0x1
+#define OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT	0x2
+#define OPTEE_MSG_ATTR_TYPE_VALUE_INOUT		0x3
+#define OPTEE_MSG_ATTR_TYPE_RMEM_INPUT		0x5
+#define OPTEE_MSG_ATTR_TYPE_RMEM_OUTPUT		0x6
+#define OPTEE_MSG_ATTR_TYPE_RMEM_INOUT		0x7
+#define OPTEE_MSG_ATTR_TYPE_TMEM_INPUT		0x9
+#define OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT		0xa
+#define OPTEE_MSG_ATTR_TYPE_TMEM_INOUT		0xb
 
 #define OPTEE_MSG_ATTR_TYPE_MASK		GENMASK_32(7, 0)
 
@@ -52,8 +49,8 @@
  * Every entry in buffer should point to a 4k page beginning (12 least
  * significant bits must be equal to zero).
  *
- * 12 least significant bits of optee_msg_param.u.tmem.buf_ptr should hold
- * page offset of user buffer.
+ * 12 least significant of optee_msg_param.u.tmem.buf_ptr should hold page
+ * offset of user buffer.
  *
  * So, entries should be placed like members of this structure:
  *
@@ -77,26 +74,24 @@
  * defined for the memory range should be used. If optee_smc.h is used as
  * bearer of this protocol OPTEE_SMC_SHM_* is used for values.
  */
-#define OPTEE_MSG_ATTR_CACHE_SHIFT		U(16)
+#define OPTEE_MSG_ATTR_CACHE_SHIFT		16
 #define OPTEE_MSG_ATTR_CACHE_MASK		GENMASK_32(2, 0)
-#define OPTEE_MSG_ATTR_CACHE_PREDEFINED		U(0)
+#define OPTEE_MSG_ATTR_CACHE_PREDEFINED		0
 
 /*
  * Same values as TEE_LOGIN_* from TEE Internal API
  */
-#define OPTEE_MSG_LOGIN_PUBLIC			U(0x00000000)
-#define OPTEE_MSG_LOGIN_USER			U(0x00000001)
-#define OPTEE_MSG_LOGIN_GROUP			U(0x00000002)
-#define OPTEE_MSG_LOGIN_APPLICATION		U(0x00000004)
-#define OPTEE_MSG_LOGIN_APPLICATION_USER	U(0x00000005)
-#define OPTEE_MSG_LOGIN_APPLICATION_GROUP	U(0x00000006)
+#define OPTEE_MSG_LOGIN_PUBLIC			0x00000000
+#define OPTEE_MSG_LOGIN_USER			0x00000001
+#define OPTEE_MSG_LOGIN_GROUP			0x00000002
+#define OPTEE_MSG_LOGIN_APPLICATION		0x00000004
+#define OPTEE_MSG_LOGIN_APPLICATION_USER	0x00000005
+#define OPTEE_MSG_LOGIN_APPLICATION_GROUP	0x00000006
 
 /*
  * Page size used in non-contiguous buffer entries
  */
-#define OPTEE_MSG_NONCONTIG_PAGE_SIZE		U(4096)
-
-#define OPTEE_MSG_FMEM_INVALID_GLOBAL_ID	0xffffffffffffffff
+#define OPTEE_MSG_NONCONTIG_PAGE_SIZE		4096
 
 #ifndef __ASSEMBLER__
 /**
@@ -131,26 +126,10 @@ struct optee_msg_param_rmem {
 };
 
 /**
- * struct optee_msg_param_fmem - FF-A memory reference parameter
- * @offs_lower:	   Lower bits of offset into shared memory reference
- * @offs_upper:	   Upper bits of offset into shared memory reference
- * @internal_offs: Internal offset into the first page of shared memory
- *		   reference
- * @size:	   Size of the buffer
- * @global_id:	   Global identifier of the shared memory
- */
-struct optee_msg_param_fmem {
-	uint32_t offs_low;
-	uint16_t offs_high;
-	uint16_t internal_offs;
-	uint64_t size;
-	uint64_t global_id;
-};
-
-/**
- * struct optee_msg_param_value - opaque value parameter
- *
- * Value parameters are passed unchecked between normal and secure world.
+ * struct optee_msg_param_value - values
+ * @a: first value
+ * @b: second value
+ * @c: third value
  */
 struct optee_msg_param_value {
 	uint64_t a;
@@ -159,18 +138,15 @@ struct optee_msg_param_value {
 };
 
 /**
- * struct optee_msg_param - parameter used together with struct optee_msg_arg
- * @attr:	attributes
- * @tmem:	parameter by temporary memory reference
- * @rmem:	parameter by registered memory reference
- * @fmem:	parameter by FF-A registered memory reference
- * @value:	parameter by opaque value
+ * struct optee_msg_param - parameter
+ * @attr: attributes
+ * @memref: a memory reference
+ * @value: a value
  *
  * @attr & OPTEE_MSG_ATTR_TYPE_MASK indicates if tmem, rmem or value is used in
  * the union. OPTEE_MSG_ATTR_TYPE_VALUE_* indicates value,
- * OPTEE_MSG_ATTR_TYPE_TMEM_* indicates @tmem and
- * OPTEE_MSG_ATTR_TYPE_RMEM_* or the alias PTEE_MSG_ATTR_TYPE_FMEM_* indicates
- * @rmem or @fmem depending on the conduit.
+ * OPTEE_MSG_ATTR_TYPE_TMEM_* indicates tmem and
+ * OPTEE_MSG_ATTR_TYPE_RMEM_* indicates rmem.
  * OPTEE_MSG_ATTR_TYPE_NONE indicates that none of the members are used.
  */
 struct optee_msg_param {
@@ -178,7 +154,6 @@ struct optee_msg_param {
 	union {
 		struct optee_msg_param_tmem tmem;
 		struct optee_msg_param_rmem rmem;
-		struct optee_msg_param_fmem fmem;
 		struct optee_msg_param_value value;
 	} u;
 };
@@ -248,20 +223,20 @@ struct optee_msg_arg {
  * Represented in 4 32-bit words in OPTEE_MSG_UID_0, OPTEE_MSG_UID_1,
  * OPTEE_MSG_UID_2, OPTEE_MSG_UID_3.
  */
-#define OPTEE_MSG_UID_0			U(0x384fb3e0)
-#define OPTEE_MSG_UID_1			U(0xe7f811e3)
-#define OPTEE_MSG_UID_2			U(0xaf630002)
-#define OPTEE_MSG_UID_3			U(0xa5d5c51b)
-#define OPTEE_MSG_FUNCID_CALLS_UID	U(0xFF01)
+#define OPTEE_MSG_UID_0			0x384fb3e0
+#define OPTEE_MSG_UID_1			0xe7f811e3
+#define OPTEE_MSG_UID_2			0xaf630002
+#define OPTEE_MSG_UID_3			0xa5d5c51b
+#define OPTEE_MSG_FUNCID_CALLS_UID	0xFF01
 
 /*
  * Returns 2.0 if using API specified in this file without further
  * extensions. Represented in 2 32-bit words in OPTEE_MSG_REVISION_MAJOR
  * and OPTEE_MSG_REVISION_MINOR
  */
-#define OPTEE_MSG_REVISION_MAJOR	U(2)
-#define OPTEE_MSG_REVISION_MINOR	U(0)
-#define OPTEE_MSG_FUNCID_CALLS_REVISION	U(0xFF03)
+#define OPTEE_MSG_REVISION_MAJOR	2
+#define OPTEE_MSG_REVISION_MINOR	0
+#define OPTEE_MSG_FUNCID_CALLS_REVISION	0xFF03
 
 /*
  * Get UUID of Trusted OS.
@@ -272,11 +247,11 @@ struct optee_msg_arg {
  * Returns UUID in 4 32-bit words in the same way as
  * OPTEE_MSG_FUNCID_CALLS_UID described above.
  */
-#define OPTEE_MSG_OS_OPTEE_UUID_0	U(0x486178e0)
-#define OPTEE_MSG_OS_OPTEE_UUID_1	U(0xe7f811e3)
-#define OPTEE_MSG_OS_OPTEE_UUID_2	U(0xbc5e0002)
-#define OPTEE_MSG_OS_OPTEE_UUID_3	U(0xa5d5c51b)
-#define OPTEE_MSG_FUNCID_GET_OS_UUID	U(0x0000)
+#define OPTEE_MSG_OS_OPTEE_UUID_0	0x486178e0
+#define OPTEE_MSG_OS_OPTEE_UUID_1	0xe7f811e3
+#define OPTEE_MSG_OS_OPTEE_UUID_2	0xbc5e0002
+#define OPTEE_MSG_OS_OPTEE_UUID_3	0xa5d5c51b
+#define OPTEE_MSG_FUNCID_GET_OS_UUID	0x0000
 
 /*
  * Get revision of Trusted OS.
@@ -288,7 +263,7 @@ struct optee_msg_arg {
  * Returns revision in 2 32-bit words in the same way as
  * OPTEE_MSG_CALLS_REVISION described above.
  */
-#define OPTEE_MSG_FUNCID_GET_OS_REVISION	U(0x0001)
+#define OPTEE_MSG_FUNCID_GET_OS_REVISION	0x0001
 
 /*
  * Do a secure call with struct optee_msg_arg as argument
@@ -324,22 +299,13 @@ struct optee_msg_arg {
  * [in] param[0].u.rmem.shm_ref		holds shared memory reference
  * [in] param[0].u.rmem.offs		0
  * [in] param[0].u.rmem.size		0
- *
- * OPTEE_MSG_CMD_DO_BOTTOM_HALF does the scheduled bottom half processing
- * of a driver.
- *
- * OPTEE_MSG_CMD_STOP_ASYNC_NOTIF informs secure world that from now is
- * normal world unable to process asynchronous notifications. Typically
- * used when the driver is shut down.
  */
-#define OPTEE_MSG_CMD_OPEN_SESSION	U(0)
-#define OPTEE_MSG_CMD_INVOKE_COMMAND	U(1)
-#define OPTEE_MSG_CMD_CLOSE_SESSION	U(2)
-#define OPTEE_MSG_CMD_CANCEL		U(3)
-#define OPTEE_MSG_CMD_REGISTER_SHM	U(4)
-#define OPTEE_MSG_CMD_UNREGISTER_SHM	U(5)
-#define OPTEE_MSG_CMD_DO_BOTTOM_HALF	U(6)
-#define OPTEE_MSG_CMD_STOP_ASYNC_NOTIF	U(7)
-#define OPTEE_MSG_FUNCID_CALL_WITH_ARG	U(0x0004)
+#define OPTEE_MSG_CMD_OPEN_SESSION	0
+#define OPTEE_MSG_CMD_INVOKE_COMMAND	1
+#define OPTEE_MSG_CMD_CLOSE_SESSION	2
+#define OPTEE_MSG_CMD_CANCEL		3
+#define OPTEE_MSG_CMD_REGISTER_SHM	4
+#define OPTEE_MSG_CMD_UNREGISTER_SHM	5
+#define OPTEE_MSG_FUNCID_CALL_WITH_ARG	0x0004
 
 #endif /* _OPTEE_MSG_H */

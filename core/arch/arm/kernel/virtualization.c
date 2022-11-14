@@ -3,7 +3,7 @@
 
 #include <compiler.h>
 #include <platform_config.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/linker.h>
 #include <kernel/mutex.h>
 #include <kernel/misc.h>
@@ -69,9 +69,9 @@ static void set_current_prtn(struct guest_partition *prtn)
 
 static size_t get_ta_ram_size(void)
 {
-	return ROUNDDOWN(TA_RAM_SIZE / CFG_VIRT_GUEST_COUNT -
-			 VCORE_UNPG_RW_SZ -
-			 core_mmu_get_total_pages_size(), SMALL_PAGE_SIZE);
+	return TA_RAM_SIZE / CFG_VIRT_GUEST_COUNT -
+		VCORE_UNPG_RW_SZ -
+		core_mmu_get_total_pages_size();
 }
 
 static struct tee_mmap_region *prepare_memory_map(paddr_t tee_data,
@@ -140,7 +140,7 @@ void virt_init_memory(struct tee_mmap_region *memory_map)
 
 	/* Init page pool that covers all secure RAM */
 	if (!tee_mm_init(&virt_mapper_pool, TEE_RAM_START,
-			 TA_RAM_START + TA_RAM_SIZE - TEE_RAM_START,
+			 TA_RAM_START + TA_RAM_SIZE,
 			 SMALL_PAGE_SHIFT,
 			 TEE_MM_POOL_NEX_MALLOC))
 		panic("Can't create pool with free pages");
@@ -152,7 +152,6 @@ void virt_init_memory(struct tee_mmap_region *memory_map)
 		switch (map->type) {
 		case MEM_AREA_TEE_RAM_RX:
 		case MEM_AREA_TEE_RAM_RO:
-		case MEM_AREA_NEX_RAM_RO:
 		case MEM_AREA_NEX_RAM_RW:
 			DMSG("Carving out area of type %d (0x%08lx-0x%08lx)",
 			     map->type, map->pa, map->pa + map->size);
@@ -169,15 +168,15 @@ void virt_init_memory(struct tee_mmap_region *memory_map)
 }
 
 
-static TEE_Result configure_guest_prtn_mem(struct guest_partition *prtn)
+static int configure_guest_prtn_mem(struct guest_partition *prtn)
 {
-	TEE_Result res = TEE_SUCCESS;
-	paddr_t original_data_pa = 0;
+	int ret;
+	paddr_t original_data_pa;
 
 	prtn->tee_ram = tee_mm_alloc(&virt_mapper_pool, VCORE_UNPG_RW_SZ);
 	if (!prtn->tee_ram) {
 		EMSG("Can't allocate memory for TEE runtime context");
-		res = TEE_ERROR_OUT_OF_MEMORY;
+		ret = TEE_ERROR_OUT_OF_MEMORY;
 		goto err;
 	}
 	DMSG("TEE RAM: %08" PRIxPA, tee_mm_get_smem(prtn->tee_ram));
@@ -185,7 +184,7 @@ static TEE_Result configure_guest_prtn_mem(struct guest_partition *prtn)
 	prtn->ta_ram = tee_mm_alloc(&virt_mapper_pool, get_ta_ram_size());
 	if (!prtn->ta_ram) {
 		EMSG("Can't allocate memory for TA data");
-		res = TEE_ERROR_OUT_OF_MEMORY;
+		ret = TEE_ERROR_OUT_OF_MEMORY;
 		goto err;
 	}
 	DMSG("TA RAM: %08" PRIxPA, tee_mm_get_smem(prtn->ta_ram));
@@ -194,25 +193,24 @@ static TEE_Result configure_guest_prtn_mem(struct guest_partition *prtn)
 				   core_mmu_get_total_pages_size());
 	if (!prtn->tables) {
 		EMSG("Can't allocate memory for page tables");
-		res = TEE_ERROR_OUT_OF_MEMORY;
+		ret = TEE_ERROR_OUT_OF_MEMORY;
 		goto err;
 	}
 
 	prtn->tables_va = phys_to_virt(tee_mm_get_smem(prtn->tables),
-				      MEM_AREA_SEC_RAM_OVERALL,
-				      core_mmu_get_total_pages_size());
+				      MEM_AREA_SEC_RAM_OVERALL);
 	assert(prtn->tables_va);
 
 	prtn->mmu_prtn = core_alloc_mmu_prtn(prtn->tables_va);
 	if (!prtn->mmu_prtn) {
-		res = TEE_ERROR_OUT_OF_MEMORY;
+		ret = TEE_ERROR_OUT_OF_MEMORY;
 		goto err;
 	}
 
 	prtn->memory_map = prepare_memory_map(tee_mm_get_smem(prtn->tee_ram),
 					     tee_mm_get_smem(prtn->ta_ram));
 	if (!prtn->memory_map) {
-		res = TEE_ERROR_OUT_OF_MEMORY;
+		ret = TEE_ERROR_OUT_OF_MEMORY;
 		goto err;
 	}
 
@@ -227,11 +225,10 @@ static TEE_Result configure_guest_prtn_mem(struct guest_partition *prtn)
 
 	/* copy .data section from R/O original */
 	memcpy(__data_start,
-	       phys_to_virt(original_data_pa, MEM_AREA_SEC_RAM_OVERALL,
-			    __data_end - __data_start),
+	       phys_to_virt(original_data_pa, MEM_AREA_SEC_RAM_OVERALL),
 	       __data_end - __data_start);
 
-	return TEE_SUCCESS;
+	return 0;
 
 err:
 	if (prtn->tee_ram)
@@ -243,34 +240,30 @@ err:
 	nex_free(prtn->mmu_prtn);
 	nex_free(prtn->memory_map);
 
-	return res;
+	return ret;
 }
 
-TEE_Result virt_guest_created(uint16_t guest_id)
+uint32_t virt_guest_created(uint16_t guest_id)
 {
-	struct guest_partition *prtn = NULL;
-	TEE_Result res = TEE_SUCCESS;
-	uint32_t exceptions = 0;
+	struct guest_partition *prtn;
+	uint32_t exceptions;
 
 	prtn = nex_calloc(1, sizeof(*prtn));
 	if (!prtn)
-		return TEE_ERROR_OUT_OF_MEMORY;
+		return OPTEE_SMC_RETURN_ENOTAVAIL;
 
 	prtn->id = guest_id;
 	mutex_init(&prtn->mutex);
 	refcount_set(&prtn->refc, 1);
-	res = configure_guest_prtn_mem(prtn);
-	if (res) {
+	if (configure_guest_prtn_mem(prtn)) {
 		nex_free(prtn);
-		return res;
+		return OPTEE_SMC_RETURN_ENOTAVAIL;
 	}
 
 	set_current_prtn(prtn);
 
 	/* Initialize threads */
 	thread_init_threads();
-	/* Do the preinitcalls */
-	call_preinitcalls();
 
 	exceptions = cpu_spin_lock_xsave(&prtn_list_lock);
 	LIST_INSERT_HEAD(&prtn_list, prtn, link);
@@ -280,11 +273,10 @@ TEE_Result virt_guest_created(uint16_t guest_id)
 
 	set_current_prtn(NULL);
 	core_mmu_set_default_prtn();
-
-	return TEE_SUCCESS;
+	return OPTEE_SMC_RETURN_OK;
 }
 
-TEE_Result virt_guest_destroyed(uint16_t guest_id)
+uint32_t virt_guest_destroyed(uint16_t guest_id)
 {
 	struct guest_partition *prtn;
 	uint32_t exceptions;
@@ -317,10 +309,10 @@ TEE_Result virt_guest_destroyed(uint16_t guest_id)
 	} else
 		EMSG("Client with id %d is not found", guest_id);
 
-	return TEE_SUCCESS;
+	return OPTEE_SMC_RETURN_OK;
 }
 
-TEE_Result virt_set_guest(uint16_t guest_id)
+bool virt_set_guest(uint16_t guest_id)
 {
 	struct guest_partition *prtn;
 	uint32_t exceptions;
@@ -329,7 +321,7 @@ TEE_Result virt_set_guest(uint16_t guest_id)
 
 	/* This can be true only if we return from IRQ RPC */
 	if (prtn && prtn->id == guest_id)
-		return TEE_SUCCESS;
+		return true;
 
 	if (prtn)
 		panic("Virtual guest partition is already set");
@@ -342,14 +334,12 @@ TEE_Result virt_set_guest(uint16_t guest_id)
 			refcount_inc(&prtn->refc);
 			cpu_spin_unlock_xrestore(&prtn_list_lock,
 						 exceptions);
-			return TEE_SUCCESS;
+			return true;
 		}
 	}
 	cpu_spin_unlock_xrestore(&prtn_list_lock, exceptions);
 
-	if (guest_id == HYP_CLNT_ID)
-		return TEE_SUCCESS;
-	return TEE_ERROR_ITEM_NOT_FOUND;
+	return guest_id == HYP_CLNT_ID;
 }
 
 void virt_unset_guest(void)
@@ -397,7 +387,6 @@ void virt_get_ta_ram(vaddr_t *start, vaddr_t *end)
 	struct guest_partition *prtn = get_current_prtn();
 
 	*start = (vaddr_t)phys_to_virt(tee_mm_get_smem(prtn->ta_ram),
-				       MEM_AREA_TA_RAM,
-				       tee_mm_get_bytes(prtn->ta_ram));
+				       MEM_AREA_TA_RAM);
 	*end = *start + tee_mm_get_bytes(prtn->ta_ram);
 }

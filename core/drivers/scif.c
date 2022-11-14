@@ -50,7 +50,7 @@ static vaddr_t chip_to_base(struct serial_chip *chip)
 	struct scif_uart_data *pd =
 		container_of(chip, struct scif_uart_data, chip);
 
-	return io_pa_or_va(&pd->base, SCIF_REG_SIZE);
+	return io_pa_or_va(&pd->base);
 }
 
 static void scif_uart_flush(struct serial_chip *chip)
@@ -77,16 +77,12 @@ static const struct serial_ops scif_uart_ops = {
 	.flush = scif_uart_flush,
 	.putc = scif_uart_putc,
 };
-DECLARE_KEEP_PAGER(scif_uart_ops);
+KEEP_PAGER(scif_uart_ops);
 
-void scif_uart_init(struct scif_uart_data *pd, paddr_t pbase)
+void scif_uart_init(struct scif_uart_data *pd, paddr_t base)
 {
-	vaddr_t base;
-
-	pd->base.pa = pbase;
+	pd->base.pa = base;
 	pd->chip.ops = &scif_uart_ops;
-
-	base = io_pa_or_va(&pd->base, SCIF_REG_SIZE);
 
 	/* Set Transmit Enable in Control register */
 	io_setbits16(base + SCIF_SCSCR, SCSCR_TE);

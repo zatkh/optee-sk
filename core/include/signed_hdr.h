@@ -6,9 +6,8 @@
 #define SIGNED_HDR_H
 
 #include <inttypes.h>
-#include <stdlib.h>
 #include <tee_api_types.h>
-#include <util.h>
+#include <stdlib.h>
 
 enum shdr_img_type {
 	SHDR_TA = 0,
@@ -49,18 +48,8 @@ struct shdr {
 	 */
 };
 
-static inline size_t shdr_get_size(const struct shdr *shdr)
-{
-	size_t s = sizeof(*shdr);
-
-	if (ADD_OVERFLOW(s, shdr->hash_size, &s) ||
-	    ADD_OVERFLOW(s, shdr->sig_size, &s))
-		return 0;
-
-	return s;
-}
-
-#define SHDR_GET_SIZE(x)	shdr_get_size((x))
+#define SHDR_GET_SIZE(x)	(sizeof(struct shdr) + (x)->hash_size + \
+				 (x)->sig_size)
 #define SHDR_GET_HASH(x)	(uint8_t *)(((struct shdr *)(x)) + 1)
 #define SHDR_GET_SIG(x)		(SHDR_GET_HASH(x) + (x)->hash_size)
 
@@ -109,18 +98,9 @@ enum shdr_enc_key_type {
 	SHDR_ENC_KEY_CLASS_WIDE = 1,
 };
 
-static inline size_t shdr_enc_get_size(const struct shdr_encrypted_ta *ehdr)
-{
-	size_t s = sizeof(*ehdr);
-
-	if (ADD_OVERFLOW(s, ehdr->iv_size, &s) ||
-	    ADD_OVERFLOW(s, ehdr->tag_size, &s))
-		return 0;
-
-	return s;
-}
-
-#define SHDR_ENC_GET_SIZE(x)	shdr_enc_get_size((x))
+#define SHDR_ENC_GET_SIZE(x)	({ typeof(x) _x = (x); \
+				   (sizeof(struct shdr_encrypted_ta) + \
+				   _x->iv_size + _x->tag_size); })
 #define SHDR_ENC_GET_IV(x)	((uint8_t *) \
 				 (((struct shdr_encrypted_ta *)(x)) + 1))
 #define SHDR_ENC_GET_TAG(x)	({ typeof(x) _x = (x); \

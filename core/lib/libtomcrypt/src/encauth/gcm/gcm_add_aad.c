@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
 /**
    @file gcm_add_aad.c
@@ -83,7 +90,7 @@ int gcm_add_aad(gcm_state *gcm,
 
    x = 0;
 #ifdef LTC_FAST
-   if (gcm->buflen == 0 && adatalen > 15) {
+   if (gcm->buflen == 0) {
       for (x = 0; x < (adatalen & ~15); x += 16) {
           for (y = 0; y < 16; y += sizeof(LTC_FAST_TYPE)) {
               *(LTC_FAST_TYPE_PTR_CAST(&gcm->X[y])) ^= *(LTC_FAST_TYPE_PTR_CAST(&adata[x + y]));
@@ -112,3 +119,7 @@ int gcm_add_aad(gcm_state *gcm,
 }
 #endif
 
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

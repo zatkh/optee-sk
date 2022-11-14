@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2019 NXP
  *
  * Brief   Memory management utilities.
  *         Primitive to allocate, free memory.
@@ -9,25 +9,75 @@
 #include <caam_common.h>
 #include <caam_trace.h>
 #include <caam_utils_mem.h>
-#include <io.h>
-#include <kernel/cache_helpers.h>
 #include <mm/core_memprot.h>
+#include <mm/tee_mmu.h>
 #include <string.h>
 
-#define MEM_TYPE_NORMAL 0      /* Normal allocation */
+/*
+ * CAAM Descriptor address alignment
+ */
+#ifdef ARM64
+#define DESC_START_ALIGN	(64 / 8)
+#else
+#define DESC_START_ALIGN	(32 / 8)
+#endif
+
+/*
+ * Check if pointer p is aligned with align
+ */
+#define IS_PTR_ALIGN(p, align)	(((uintptr_t)(p) & ((align) - 1)) == 0)
+
+/*
+ * Check if size is aligned with align
+ */
+#define IS_SIZE_ALIGN(size, align)                                             \
+	({                                                                     \
+		__typeof__(size) _size = (size);                               \
+		__typeof__(size) _sizeup = 0;                                  \
+									       \
+		_sizeup = ROUNDUP(_size, align);                               \
+		(_sizeup == _size) ? 1 : 0;                                    \
+	})
+
+/*
+ * Read the system cache line size.
+ * Get the value from the ARM system configration register
+ */
+static uint32_t read_cacheline_size(void)
+{
+	uint32_t value = 0;
+
+#ifdef ARM64
+	value = read_ctr_el0();
+#else
+	value = read_ctr();
+#endif /* ARM64 */
+	value = CTR_WORD_SIZE
+		<< ((value >> CTR_DMINLINE_SHIFT) & CTR_DMINLINE_MASK);
+	MEM_TRACE("System Cache Line size = %" PRIu32 " bytes", value);
+
+	return value;
+}
+
 #define MEM_TYPE_ZEROED	BIT(0) /* Buffer filled with 0's */
 #define MEM_TYPE_ALIGN	BIT(1) /* Address and size aligned on a cache line */
 
-/*
- * Read the first byte at the given @addr to ensure that
- * virtual page is mapped before getting its physical address.
- *
- * @addr: address to read
- */
-static inline void touch_page(vaddr_t addr)
-{
-	io_read8(addr);
-}
+#if (CFG_CAAM_DBG & DBG_TRACE_MEM)
+#define DEBUG_INFO_SIZE
+#endif
+
+#define CAAM_MEM_INFO_HDR
+#ifdef CAAM_MEM_INFO_HDR
+struct __packed mem_info {
+	void *addr;
+#ifdef DEBUG_INFO_SIZE
+	size_t size;
+#endif /* DEBUG_INFO_SIZE */
+	uint8_t type;
+};
+
+#define MEM_INFO_SIZE  ROUNDUP(sizeof(struct mem_info), sizeof(void *))
+#define OF_MEM_INFO(p) (struct mem_info *)((uint8_t *)(p) - MEM_INFO_SIZE)
 
 /*
  * Allocate an area of given size in bytes. Add the memory allocator
@@ -38,35 +88,138 @@ static inline void touch_page(vaddr_t addr)
  */
 static void *mem_alloc(size_t size, uint8_t type)
 {
+	struct mem_info *info = NULL;
+	vaddr_t ret_addr = 0;
 	void *ptr = NULL;
-	size_t alloc_size = size;
+	size_t alloc_size = 0;
+	uint32_t cacheline_size = 0;
 
 	MEM_TRACE("alloc %zu bytes of type %" PRIu8, size, type);
 
+	/*
+	 * The mem_info header is added just before the returned
+	 * buffer address
+	 *
+	 * --------------
+	 * |  mem_info  |
+	 * --------------
+	 * |  Buffer    |
+	 * --------------
+	 */
+	if (ADD_OVERFLOW(size, MEM_INFO_SIZE, &alloc_size))
+		return NULL;
+
 	if (type & MEM_TYPE_ALIGN) {
-		size_t cacheline_size = dcache_get_line_size();
+		/*
+		 * Buffer must be aligned on a cache line:
+		 *  - Buffer start address aligned on a cache line
+		 *  - End of Buffer inside a cache line.
+		 *
+		 * If area's (mem info + buffer) to be allocated size is
+		 * already cache line aligned add a cache line.
+		 *
+		 * Because Buffer address returned is moved up to a cache
+		 * line start offset, add a cache line to full area allocated
+		 * to ensure that end of the working buffer is in a cache line.
+		 */
+		cacheline_size = read_cacheline_size();
+		if (size == cacheline_size) {
+			if (ADD_OVERFLOW(alloc_size, cacheline_size,
+					 &alloc_size))
+				return NULL;
+		}
 
-		if (ROUNDUP_OVERFLOW(alloc_size, CFG_CAAM_SIZE_ALIGN,
-				     &alloc_size))
+		if (ADD_OVERFLOW(cacheline_size,
+				 ROUNDUP(alloc_size, cacheline_size),
+				 &alloc_size))
 			return NULL;
-
-		if (ROUNDUP_OVERFLOW(alloc_size, cacheline_size, &alloc_size))
-			return NULL;
-
-		ptr = memalign(cacheline_size, alloc_size);
-	} else {
-		ptr = malloc(alloc_size);
 	}
+
+	if (type & MEM_TYPE_ZEROED)
+		ptr = calloc(1, alloc_size);
+	else
+		ptr = malloc(alloc_size);
 
 	if (!ptr) {
 		MEM_TRACE("alloc Error - NULL");
 		return NULL;
 	}
 
+	/* Calculate the return buffer address */
+	ret_addr = (vaddr_t)ptr + MEM_INFO_SIZE;
+	if (type & MEM_TYPE_ALIGN) {
+		ret_addr = ROUNDUP(ret_addr, cacheline_size);
+		MEM_TRACE("alloc %p 0x%" PRIxVA " %zu vs %zu", ptr, ret_addr,
+			  alloc_size, size);
+	}
+
+	/*
+	 * Add the mem_info header
+	 */
+	info = OF_MEM_INFO(ret_addr);
+	info->addr = ptr;
+#ifdef DEBUG_INFO_SIZE
+	info->size = alloc_size;
+#endif /* DEBUG_INFO_SIZE */
+	info->type = type;
+
+	MEM_TRACE("alloc returned %p -> %p", ptr, (void *)ret_addr);
+
+	return (void *)ret_addr;
+}
+
+/*
+ * Free allocated area
+ *
+ * @ptr  area to free
+ */
+static void mem_free(void *ptr)
+{
+	struct mem_info *info = NULL;
+
+	if (!ptr)
+		return;
+
+	info = OF_MEM_INFO(ptr);
+	MEM_TRACE("free %p info %p", ptr, info);
+	MEM_TRACE("free @%p - %zu bytes of type %" PRIu8, info->addr,
+		  info->size, info->type);
+
+	free(info->addr);
+}
+#else /* CAAM_MEM_INFO_HDR */
+/*
+ * Allocate an area of given size in bytes
+ *
+ * @size   Size in bytes to allocate
+ * @type   Type of area to allocate (refer to MEM_TYPE_*)
+ */
+static void *mem_alloc(size_t size, uint8_t type)
+{
+	void *ptr = NULL;
+	size_t alloc_size = size;
+	uint32_t cacheline_size = 0;
+
+	MEM_TRACE("alloc (normal) %zu bytes of type %" PRIu8, size, type);
+
+	if (type & MEM_TYPE_ALIGN) {
+		cacheline_size = read_cacheline_size();
+		if (ADD_OVERFLOW(alloc_size,
+				 ROUNDUP(alloc_size, cacheline_size),
+				 &alloc_size))
+			return NULL;
+	}
+
+	ptr = malloc(alloc_size);
+	if (!ptr) {
+		MEM_TRACE("alloc (normal) Error - NULL");
+		return NULL;
+	}
+
 	if (type & MEM_TYPE_ZEROED)
 		memset(ptr, 0, alloc_size);
 
-	MEM_TRACE("alloc returned %p", ptr);
+	MEM_TRACE("alloc (normal) returned %p", ptr);
 	return ptr;
 }
 
@@ -78,10 +231,11 @@ static void *mem_alloc(size_t size, uint8_t type)
 static void mem_free(void *ptr)
 {
 	if (ptr) {
-		MEM_TRACE("free %p", ptr);
+		MEM_TRACE("free (normal) %p", ptr);
 		free(ptr);
 	}
 }
+#endif /* CAAM_MEM_INFO_HDR */
 
 /*
  * Allocate internal driver buffer aligned with a cache line.
@@ -109,11 +263,6 @@ static enum caam_status mem_alloc_buf(struct caambuf *buf, size_t size,
 	return CAAM_NO_ERROR;
 }
 
-void *caam_alloc(size_t size)
-{
-	return mem_alloc(size, MEM_TYPE_NORMAL);
-}
-
 void *caam_calloc(size_t size)
 {
 	return mem_alloc(size, MEM_TYPE_ZEROED);
@@ -139,11 +288,6 @@ void caam_free_desc(uint32_t **ptr)
 {
 	mem_free(*ptr);
 	*ptr = NULL;
-}
-
-enum caam_status caam_alloc_buf(struct caambuf *buf, size_t size)
-{
-	return mem_alloc_buf(buf, size, MEM_TYPE_NORMAL);
 }
 
 enum caam_status caam_calloc_buf(struct caambuf *buf, size_t size)
@@ -175,6 +319,41 @@ void caam_free_buf(struct caambuf *buf)
 	}
 }
 
+void caam_sgtbuf_free(struct caamsgtbuf *data)
+{
+	if (data->sgt_type)
+		caam_free(data->sgt);
+	else
+		caam_free(data->buf);
+
+	data->sgt = NULL;
+	data->buf = NULL;
+}
+
+enum caam_status caam_sgtbuf_alloc(struct caamsgtbuf *data)
+{
+	if (!data)
+		return CAAM_BAD_PARAM;
+
+	if (data->sgt_type) {
+		data->sgt =
+			caam_calloc(data->number * (sizeof(struct caamsgt) +
+						    sizeof(struct caambuf)));
+		data->buf = (void *)(((uint8_t *)data->sgt) +
+				     (data->number * sizeof(struct caamsgt)));
+	} else {
+		data->buf = caam_calloc(data->number * sizeof(struct caambuf));
+		data->sgt = NULL;
+	}
+
+	if (!data->buf || (!data->sgt && data->sgt_type)) {
+		caam_sgtbuf_free(data);
+		return CAAM_OUT_MEMORY;
+	}
+
+	return CAAM_NO_ERROR;
+}
+
 bool caam_mem_is_cached_buf(void *buf, size_t size)
 {
 	enum teecore_memtypes mtype = MEM_AREA_MAXTYPE;
@@ -195,14 +374,44 @@ bool caam_mem_is_cached_buf(void *buf, size_t size)
 	return is_cached;
 }
 
+int caam_set_or_alloc_align_buf(void *orig, struct caambuf *dst, size_t size)
+{
+	uint32_t cacheline_size = 0;
+
+	if (caam_mem_is_cached_buf(orig, size)) {
+		/*
+		 * Check if either orig pointer or size are aligned on the
+		 * cache line size.
+		 * If not, reallocate a buffer aligned on cache line.
+		 */
+		cacheline_size = read_cacheline_size();
+		if (!IS_PTR_ALIGN(orig, cacheline_size) ||
+		    !IS_SIZE_ALIGN(size, cacheline_size)) {
+			if (caam_alloc_align_buf(dst, size) != CAAM_NO_ERROR)
+				return -1;
+
+			return 1;
+		}
+		dst->nocache = 0;
+	} else {
+		dst->nocache = 1;
+	}
+
+	dst->data = orig;
+	dst->paddr = virt_to_phys(dst->data);
+	if (!dst->paddr)
+		return -1;
+
+	dst->length = size;
+
+	return 0;
+}
+
 enum caam_status caam_cpy_block_src(struct caamblock *block,
 				    struct caambuf *src, size_t offset)
 {
 	enum caam_status ret = CAAM_FAILURE;
 	size_t cpy_size = 0;
-
-	if (!src->data)
-		return CAAM_FAILURE;
 
 	/* Check if the temporary buffer is allocated, else allocate it */
 	if (!block->buf.data) {
@@ -271,8 +480,6 @@ int caam_mem_get_pa_area(struct caambuf *buf, struct caambuf **out_pabufs)
 	 */
 	va = (vaddr_t)buf->data;
 	pa = virt_to_phys((void *)va);
-	if (!pa)
-		goto err;
 
 	nb_pa_area = 0;
 	if (pabufs) {
@@ -288,20 +495,10 @@ int caam_mem_get_pa_area(struct caambuf *buf, struct caambuf **out_pabufs)
 		len_tohandle =
 			MIN(SMALL_PAGE_SIZE - (va & SMALL_PAGE_MASK), len);
 		next_va = va + len_tohandle;
+		next_pa = virt_to_phys((void *)next_va);
+
 		if (pabufs)
 			pabufs[nb_pa_area].length += len_tohandle;
-
-		/*
-		 * Reaches the end of buffer, exits here because
-		 * the next virtual address is out of scope.
-		 */
-		if (len == len_tohandle)
-			break;
-
-		touch_page(next_va);
-		next_pa = virt_to_phys((void *)next_va);
-		if (!next_pa)
-			goto err;
 
 		if (next_pa != (pa + len_tohandle)) {
 			nb_pa_area++;
@@ -324,28 +521,4 @@ int caam_mem_get_pa_area(struct caambuf *buf, struct caambuf **out_pabufs)
 
 	MEM_TRACE("Nb Physical Area %d", nb_pa_area + 1);
 	return nb_pa_area + 1;
-
-err:
-	free(pabufs);
-	return -1;
-}
-
-void caam_mem_cpy_ltrim_buf(struct caambuf *dst, struct caambuf *src)
-{
-	size_t offset = 0;
-	size_t cpy_size = 0;
-
-	/* Calculate the offset to start the copy */
-	while (!src->data[offset] && offset < src->length)
-		offset++;
-
-	if (offset >= src->length)
-		offset = src->length - 1;
-
-	cpy_size = MIN(dst->length, (src->length - offset));
-	MEM_TRACE("Copy %zu of src %zu bytes (offset = %zu)", cpy_size,
-		  src->length, offset);
-	memcpy(dst->data, &src->data[offset], cpy_size);
-
-	dst->length = cpy_size;
 }

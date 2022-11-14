@@ -26,17 +26,14 @@
 #include "ftrace.h"
 
 #define DURATION_MAX_LEN		16
-#define ENTRY_SIZE(idx)			(DURATION_MAX_LEN + (idx) + \
-					 (2 * sizeof(unsigned long)) + 8)
-#define EXIT_SIZE(idx)			(DURATION_MAX_LEN + (idx) + 3)
 
 static const char hex_str[] = "0123456789abcdef";
 
 static __noprof struct ftrace_buf *get_fbuf(void)
 {
 #if defined(__KERNEL__)
-	short int ct = thread_get_id_may_fail();
-	struct ts_session *s = NULL;
+	int ct = thread_get_id_may_fail();
+	struct tee_ta_session *s = NULL;
 	struct thread_specific_data *tsd = NULL;
 
 	if (ct == -1)
@@ -140,7 +137,7 @@ static size_t __noprof to_func_enter_fmt(char *buf, uint32_t ret_idx,
 void __noprof ftrace_enter(unsigned long pc, unsigned long *lr)
 {
 	struct ftrace_buf *fbuf = NULL;
-	size_t line_size = 0;
+	size_t dump_size = 0;
 	bool full = false;
 
 	fbuf = get_fbuf();
@@ -148,15 +145,16 @@ void __noprof ftrace_enter(unsigned long pc, unsigned long *lr)
 	if (!fbuf || !fbuf->buf_off || !fbuf->max_size)
 		return;
 
-	line_size = ENTRY_SIZE(fbuf->ret_idx);
+	dump_size = DURATION_MAX_LEN + fbuf->ret_idx +
+			(2 * sizeof(unsigned long)) + 8;
 
 	/*
 	 * Check if we have enough space in ftrace buffer. If not then try to
 	 * make room.
 	 */
-	full = (fbuf->curr_size + line_size) > fbuf->max_size;
+	full = (fbuf->curr_size + dump_size) > fbuf->max_size;
 	if (full)
-		full = !fbuf_make_room(fbuf, line_size);
+		full = !fbuf_make_room(fbuf, dump_size);
 
 	if (!full)
 		fbuf->curr_size += to_func_enter_fmt((char *)fbuf +
@@ -167,7 +165,7 @@ void __noprof ftrace_enter(unsigned long pc, unsigned long *lr)
 
 	if (fbuf->ret_idx < FTRACE_RETFUNC_DEPTH) {
 		fbuf->ret_stack[fbuf->ret_idx] = *lr;
-		fbuf->begin_time[fbuf->ret_idx] = barrier_read_counter_timer();
+		fbuf->begin_time[fbuf->ret_idx] = read_cntpct();
 		fbuf->ret_idx++;
 	} else {
 		/*
@@ -177,7 +175,7 @@ void __noprof ftrace_enter(unsigned long pc, unsigned long *lr)
 #if defined(__KERNEL__)
 		panic();
 #else
-		_utee_panic(0);
+		utee_panic(0);
 #endif
 	}
 
@@ -242,8 +240,8 @@ static void __noprof ftrace_duration(char *buf, uint64_t start, uint64_t end)
 unsigned long __noprof ftrace_return(void)
 {
 	struct ftrace_buf *fbuf = NULL;
-	char *line = NULL;
-	size_t line_size = 0;
+	size_t dump_size = 0;
+	char *curr_buf = NULL;
 	char *dur_loc = NULL;
 	uint32_t i = 0;
 
@@ -255,63 +253,54 @@ unsigned long __noprof ftrace_return(void)
 	else
 		return 0;
 
-	/*
-	 * Check if we have a minimum ftrace buffer current size. If we have
-	 * somehow corrupted ftrace buffer formatting, the function call chain
-	 * shouldn't get broken since we have a valid fbuf->ret_idx at this
-	 * point which can retrieve correct return pointer from fbuf->ret_stack.
-	 */
-	line_size = ENTRY_SIZE(fbuf->ret_idx);
-	if (fbuf->curr_size < line_size)
-		goto out;
-
-	line = (char *)fbuf + fbuf->buf_off + fbuf->curr_size - line_size;
+	curr_buf = (char *)fbuf + fbuf->buf_off + fbuf->curr_size;
 
 	/*
 	 * Check for '{' symbol as it represents if it is an exit from current
 	 * or nested function. If exit is from current function, than exit dump
 	 * via ';' symbol else exit dump via '}' symbol.
 	 */
-	if (line[line_size - 2] == '{') {
-		line[line_size - 3] = ';';
-		line[line_size - 2] = '\n';
-		line[line_size - 1] = '\0';
+	if (*(curr_buf - 2) == '{') {
+		*(curr_buf - 3) = ';';
+		*(curr_buf - 2) = '\n';
+		*(curr_buf - 1) = '\0';
 		fbuf->curr_size -= 1;
 
-		dur_loc = &line[DURATION_MAX_LEN - 3];
+		dur_loc = curr_buf - (fbuf->ret_idx +
+				      (2 * sizeof(unsigned long)) + 11);
 		ftrace_duration(dur_loc, fbuf->begin_time[fbuf->ret_idx],
-				barrier_read_counter_timer());
+				read_cntpct());
 	} else {
 		bool full = false;
 
-		line_size = EXIT_SIZE(fbuf->ret_idx);
-		full = (fbuf->curr_size + line_size) > fbuf->max_size;
+		dump_size = DURATION_MAX_LEN + fbuf->ret_idx + 3;
+		full = (fbuf->curr_size + dump_size) > fbuf->max_size;
 		if (full)
-			full = !fbuf_make_room(fbuf, line_size);
+			full = !fbuf_make_room(fbuf, dump_size);
 
 		if (!full) {
-			line = (char *)fbuf + fbuf->buf_off + fbuf->curr_size;
+			curr_buf = (char *)fbuf + fbuf->buf_off +
+				   fbuf->curr_size;
 
-			for (i = 0; i < DURATION_MAX_LEN + fbuf->ret_idx; i++) {
+			for (i = 0; i < (DURATION_MAX_LEN + fbuf->ret_idx); i++)
 				if (i == (DURATION_MAX_LEN - 2))
-					line[i] = '|';
+					*curr_buf++ = '|';
 				else
-					line[i] = ' ';
-			}
+					*curr_buf++ = ' ';
 
-			line[i] = '}';
-			line[i + 1] = '\n';
-			line[i + 2] = '\0';
+			*curr_buf++ = '}';
+			*curr_buf++ = '\n';
+			*curr_buf = '\0';
 
-			fbuf->curr_size += line_size - 1;
+			fbuf->curr_size += dump_size - 1;
 
-			dur_loc = &line[DURATION_MAX_LEN - 4];
+			dur_loc = curr_buf - fbuf->ret_idx - 6;
 			ftrace_duration(dur_loc,
 					fbuf->begin_time[fbuf->ret_idx],
-					barrier_read_counter_timer());
+					read_cntpct());
 		}
 	}
-out:
+
 	return fbuf->ret_stack[fbuf->ret_idx];
 }
 

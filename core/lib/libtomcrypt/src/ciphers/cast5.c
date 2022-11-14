@@ -1,5 +1,12 @@
-/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
-/* SPDX-License-Identifier: Unlicense */
+// SPDX-License-Identifier: BSD-2-Clause
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis
+ *
+ * LibTomCrypt is a library that provides various cryptographic
+ * algorithms in a highly modular and flexible manner.
+ *
+ * The library is free for all purposes without any express
+ * guarantee it works.
+ */
 
  /**
    @file cast5.c
@@ -398,7 +405,7 @@ static const ulong32 S8[256] = {
     @return CRYPT_OK if successful
  */
 #ifdef LTC_CLEAN_STACK
-static int s_cast5_setup(const unsigned char *key, int keylen, int num_rounds, symmetric_key *skey)
+static int _cast5_setup(const unsigned char *key, int keylen, int num_rounds, symmetric_key *skey)
 #else
 int cast5_setup(const unsigned char *key, int keylen, int num_rounds, symmetric_key *skey)
 #endif
@@ -485,13 +492,19 @@ int cast5_setup(const unsigned char *key, int keylen, int num_rounds, symmetric_
 int cast5_setup(const unsigned char *key, int keylen, int num_rounds, symmetric_key *skey)
 {
    int z;
-   z = s_cast5_setup(key, keylen, num_rounds, skey);
+   z = _cast5_setup(key, keylen, num_rounds, skey);
    burn_stack(sizeof(ulong32)*8 + 16 + sizeof(int)*2);
    return z;
 }
 #endif
 
-LTC_INLINE static ulong32 FI(ulong32 R, ulong32 Km, ulong32 Kr)
+#ifdef _MSC_VER
+   #define INLINE __inline
+#else
+   #define INLINE
+#endif
+
+INLINE static ulong32 FI(ulong32 R, ulong32 Km, ulong32 Kr)
 {
    ulong32 I;
    I = (Km + R);
@@ -499,7 +512,7 @@ LTC_INLINE static ulong32 FI(ulong32 R, ulong32 Km, ulong32 Kr)
    return ((S1[LTC_BYTE(I, 3)] ^ S2[LTC_BYTE(I,2)]) - S3[LTC_BYTE(I,1)]) + S4[LTC_BYTE(I,0)];
 }
 
-LTC_INLINE static ulong32 FII(ulong32 R, ulong32 Km, ulong32 Kr)
+INLINE static ulong32 FII(ulong32 R, ulong32 Km, ulong32 Kr)
 {
    ulong32 I;
    I = (Km ^ R);
@@ -507,7 +520,7 @@ LTC_INLINE static ulong32 FII(ulong32 R, ulong32 Km, ulong32 Kr)
    return ((S1[LTC_BYTE(I, 3)] - S2[LTC_BYTE(I,2)]) + S3[LTC_BYTE(I,1)]) ^ S4[LTC_BYTE(I,0)];
 }
 
-LTC_INLINE static ulong32 FIII(ulong32 R, ulong32 Km, ulong32 Kr)
+INLINE static ulong32 FIII(ulong32 R, ulong32 Km, ulong32 Kr)
 {
    ulong32 I;
    I = (Km - R);
@@ -522,7 +535,7 @@ LTC_INLINE static ulong32 FIII(ulong32 R, ulong32 Km, ulong32 Kr)
   @param skey The key as scheduled
 */
 #ifdef LTC_CLEAN_STACK
-static int s_cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetric_key *skey)
+static int _cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetric_key *skey)
 #else
 int cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetric_key *skey)
 #endif
@@ -562,7 +575,7 @@ int cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetri
 #ifdef LTC_CLEAN_STACK
 int cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetric_key *skey)
 {
-   int err = s_cast5_ecb_encrypt(pt,ct,skey);
+   int err =_cast5_ecb_encrypt(pt,ct,skey);
    burn_stack(sizeof(ulong32)*3);
    return err;
 }
@@ -575,7 +588,7 @@ int cast5_ecb_encrypt(const unsigned char *pt, unsigned char *ct, const symmetri
   @param skey The key as scheduled
 */
 #ifdef LTC_CLEAN_STACK
-static int s_cast5_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetric_key *skey)
+static int _cast5_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetric_key *skey)
 #else
 int cast5_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetric_key *skey)
 #endif
@@ -615,7 +628,7 @@ int cast5_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetri
 #ifdef LTC_CLEAN_STACK
 int cast5_ecb_decrypt(const unsigned char *ct, unsigned char *pt, const symmetric_key *skey)
 {
-   int err = s_cast5_ecb_decrypt(ct,pt,skey);
+   int err = _cast5_ecb_decrypt(ct,pt,skey);
    burn_stack(sizeof(ulong32)*3);
    return err;
 }
@@ -703,3 +716,7 @@ int cast5_keysize(int *keysize)
 }
 
 #endif
+
+/* ref:         $Format:%D$ */
+/* git commit:  $Format:%H$ */
+/* commit time: $Format:%ai$ */

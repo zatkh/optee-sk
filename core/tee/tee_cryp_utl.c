@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2014-2021, Linaro Limited
- * Copyright (c) 2021, SumUp Services GmbH
+ * Copyright (c) 2014, Linaro Limited
  */
 
 #include <crypto/crypto.h>
 #include <initcall.h>
-#include <kernel/dt_driver.h>
 #include <kernel/panic.h>
 #include <kernel/tee_time.h>
 #include <rng_support.h>
@@ -17,14 +15,43 @@
 #include <trace.h>
 #include <utee_defines.h>
 
-TEE_Result tee_alg_get_digest_size(uint32_t algo, size_t *size)
+TEE_Result tee_hash_get_digest_size(uint32_t algo, size_t *size)
 {
-	size_t digest_size = TEE_ALG_GET_DIGEST_SIZE(algo);
-
-	if (!digest_size)
+	switch (algo) {
+	case TEE_ALG_MD5:
+	case TEE_ALG_HMAC_MD5:
+		*size = TEE_MD5_HASH_SIZE;
+		break;
+	case TEE_ALG_SHA1:
+	case TEE_ALG_HMAC_SHA1:
+	case TEE_ALG_DSA_SHA1:
+		*size = TEE_SHA1_HASH_SIZE;
+		break;
+	case TEE_ALG_SHA224:
+	case TEE_ALG_HMAC_SHA224:
+	case TEE_ALG_DSA_SHA224:
+		*size = TEE_SHA224_HASH_SIZE;
+		break;
+	case TEE_ALG_SHA256:
+	case TEE_ALG_HMAC_SHA256:
+	case TEE_ALG_DSA_SHA256:
+		*size = TEE_SHA256_HASH_SIZE;
+		break;
+	case TEE_ALG_SHA384:
+	case TEE_ALG_HMAC_SHA384:
+		*size = TEE_SHA384_HASH_SIZE;
+		break;
+	case TEE_ALG_SHA512:
+	case TEE_ALG_HMAC_SHA512:
+		*size = TEE_SHA512_HASH_SIZE;
+		break;
+	case TEE_ALG_SM3:
+	case TEE_ALG_HMAC_SM3:
+		*size = TEE_SM3_HASH_SIZE;
+		break;
+	default:
 		return TEE_ERROR_NOT_SUPPORTED;
-
-	*size = digest_size;
+	}
 
 	return TEE_SUCCESS;
 }
@@ -57,6 +84,33 @@ out:
 	return res;
 }
 
+TEE_Result tee_mac_get_digest_size(uint32_t algo, size_t *size)
+{
+	switch (algo) {
+	case TEE_ALG_HMAC_MD5:
+	case TEE_ALG_HMAC_SHA224:
+	case TEE_ALG_HMAC_SHA1:
+	case TEE_ALG_HMAC_SHA256:
+	case TEE_ALG_HMAC_SHA384:
+	case TEE_ALG_HMAC_SHA512:
+	case TEE_ALG_HMAC_SM3:
+		return tee_hash_get_digest_size(algo, size);
+	case TEE_ALG_AES_CBC_MAC_NOPAD:
+	case TEE_ALG_AES_CBC_MAC_PKCS5:
+	case TEE_ALG_AES_CMAC:
+		*size = TEE_AES_BLOCK_SIZE;
+		return TEE_SUCCESS;
+	case TEE_ALG_DES_CBC_MAC_NOPAD:
+	case TEE_ALG_DES_CBC_MAC_PKCS5:
+	case TEE_ALG_DES3_CBC_MAC_NOPAD:
+	case TEE_ALG_DES3_CBC_MAC_PKCS5:
+		*size = TEE_DES_BLOCK_SIZE;
+		return TEE_SUCCESS;
+	default:
+		return TEE_ERROR_NOT_SUPPORTED;
+	}
+}
+
 TEE_Result tee_cipher_get_block_size(uint32_t algo, size_t *size)
 {
 	switch (algo) {
@@ -84,7 +138,6 @@ TEE_Result tee_cipher_get_block_size(uint32_t algo, size_t *size)
 	case TEE_ALG_DES3_CBC_MAC_PKCS5:
 	case TEE_ALG_DES3_ECB_NOPAD:
 	case TEE_ALG_DES3_CBC_NOPAD:
-	case TEE_ALG_DES3_CMAC:
 		*size = 8;
 		break;
 
@@ -208,8 +261,6 @@ static TEE_Result tee_cryp_init(void)
 		panic();
 	}
 	plat_rng_init();
-
-	dt_driver_crypt_init_complete();
 
 	return TEE_SUCCESS;
 }

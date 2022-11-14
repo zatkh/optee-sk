@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright 2017-2019, 2021 NXP
+ * Copyright 2017-2019 NXP
  *
  * Brief   CAAM Configuration.
  */
@@ -8,9 +8,7 @@
 #include <caam_hal_cfg.h>
 #include <caam_hal_jr.h>
 #include <caam_jr.h>
-#include <kernel/boot.h>
 #include <kernel/dt.h>
-#include <kernel/interrupt.h>
 #include <libfdt.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
@@ -53,7 +51,7 @@ static paddr_t find_jr_offset(void *fdt, int status, int *find_node)
 
 void caam_hal_cfg_get_ctrl_dt(void *fdt, vaddr_t *ctrl_base)
 {
-	size_t size = 0;
+	ssize_t size = 0;
 	int node = 0;
 	paddr_t pctrl_base = 0;
 
@@ -76,17 +74,19 @@ void caam_hal_cfg_get_ctrl_dt(void *fdt, vaddr_t *ctrl_base)
 	}
 
 	size = _fdt_reg_size(fdt, node);
-	if (size == DT_INFO_INVALID_REG_SIZE) {
+	if (size < 0) {
 		HAL_TRACE("CAAM control base address size not defined");
 		return;
 	}
 
-	*ctrl_base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, pctrl_base,
-						   size);
-	if (!*ctrl_base) {
+	if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, pctrl_base, size)) {
 		EMSG("CAAM control base MMU PA mapping failure");
 		return;
 	}
+
+	*ctrl_base = (vaddr_t)phys_to_virt(pctrl_base, MEM_AREA_IO_SEC);
+	if (!*ctrl_base)
+		EMSG("CAAM control base MMU VA mapping failure");
 
 	HAL_TRACE("Map Controller 0x%" PRIxVA, *ctrl_base);
 }
@@ -99,12 +99,10 @@ void caam_hal_cfg_get_jobring_dt(void *fdt, struct caam_jrcfg *jrcfg)
 
 	jr_offset = find_jr_offset(fdt, DT_STATUS_OK_SEC, &node);
 	if (jr_offset) {
-		if (!is_embedded_dt(fdt)) {
-			/* Disable JR for Normal World */
-			if (dt_enable_secure_status(fdt, node)) {
-				EMSG("Not able to disable JR DTB entry");
-				return;
-			}
+		/* Disable JR for Normal World */
+		if (dt_enable_secure_status(fdt, node)) {
+			EMSG("Not able to disable JR DTB entry");
+			return;
 		}
 
 		/* Get the job ring interrupt */
@@ -115,7 +113,8 @@ void caam_hal_cfg_get_jobring_dt(void *fdt, struct caam_jrcfg *jrcfg)
 		}
 
 		jrcfg->offset = jr_offset;
-		jrcfg->it_num = jr_it_num;
+		/* Add index of the first SPI interrupt */
+		jrcfg->it_num = jr_it_num + 32;
 	}
 }
 

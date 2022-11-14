@@ -10,9 +10,10 @@
 #include <drivers/imx_uart.h>
 #include <io.h>
 #include <kernel/cache_helpers.h>
-#include <kernel/boot.h>
+#include <kernel/generic_boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
+#include <kernel/pm_stubs.h>
 #include <kernel/thread.h>
 #include <kernel/tlb_helpers.h>
 #include <kernel/tz_ssvce_pl310.h>
@@ -45,6 +46,6 @@ void sm_pm_cpu_suspend_save(struct sm_pm_ctx *ctx, uint32_t sp)
 	dcache_op_level1(DCACHE_OP_CLEAN_INV);
 
 #ifdef CFG_PL310
-	arm_cl2_cleanbyway(core_mmu_get_va(PL310_BASE, MEM_AREA_IO_SEC, 1));
+	arm_cl2_cleanbyway(core_mmu_get_va(PL310_BASE, MEM_AREA_IO_SEC));
 #endif
 }

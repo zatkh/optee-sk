@@ -17,17 +17,11 @@ link-ldflags += -T $(link-script-pp$(sm))
 link-ldflags += -Map=$(link-out-dir$(sm))/ldelf.map
 link-ldflags += --sort-section=alignment
 link-ldflags += -z max-page-size=4096 # OP-TEE always uses 4K alignment
-ifeq ($(CFG_CORE_BTI),y)
-link-ldflags += $(call ld-option,-z force-bti) --fatal-warnings
-endif
-ifeq ($(CFG_ARM32_$(sm)), y)
-link-ldflags += $(call ld-option,--no-warn-execstack)
-endif
 link-ldflags += $(link-ldflags$(sm))
 
 link-ldadd  = $(addprefix -L,$(libdirs))
 link-ldadd += --start-group $(addprefix -l,$(libnames)) --end-group
-ldargs-ldelf.elf := $(link-ldflags) $(objs) $(link-ldadd) $(libgcc$(sm))
+ldargs-ldelf.elf := $(link-ldflags) $(objs) $(link-ldadd)
 
 link-script-cppflags-$(sm) := \
 	$(filter-out $(CPPFLAGS_REMOVE) $(cppflags-remove), \
