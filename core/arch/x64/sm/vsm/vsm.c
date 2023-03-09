@@ -21,6 +21,30 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 
 	DMSG("Dispatch call id 0x%X", params->a0);
 
+	/**
+	 *  For now use params->a7 to pass back status to VTL0 since console
+	 *  support is not yet enabled
+	 */
+	switch(params->a0) {
+		case VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY:
+			/* Temporary to ensure we have landed here */
+			params->a6 = VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY;
+			break;
+		case VSM_VTL_CALL_FUNC_ID_LOCK_CR:
+			/* Temporary to ensure we have landed here */
+			params->a6 = VSM_VTL_CALL_FUNC_ID_LOCK_CR;
+			break;
+		default:
+			params->a6 = TEE_ERROR_BAD_PARAMETERS;
+			break;
+	}
+	return;
+
+	/**
+	 * Code inherited from Mariner code base.
+	 * Keeping it till we understand the full scope of LVBS and whethe
+	 * we need to carry any of this forward
+	 */
 	if (params->a0 == VSM_VTL_CALL_FUNC_ID_PROTECT_OPTEE_PAGES) {
 		res = vsm_protect_optee_pages();
 		params->a7 = res;

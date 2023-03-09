@@ -57,10 +57,13 @@ enum hv_status hv_rep_hypercall(enum hv_call_code call_code, uint16_t rep_count,
 TEE_Result hv_get_vsm_code_page_offsets(uint16_t *vtl_call_offset,
 	uint16_t *vtl_return_offset);
 
-TEE_Result hv_set_vsm_partition_info(bool enable_vtl_protection,
+TEE_Result hv_set_vsm_partition_config(bool enable_vtl_protection,
 	uint8_t default_vtl_protection_mask);
 
 TEE_Result hv_modify_vtl_protection_mask(uint64_t gpa_page_list[],
 	size_t *number_of_pages, uint32_t page_access);
+
+/* Temporary API added for confirming VTL1 initializations */
+TEE_Result hv_get_vsm_partition_info(uint8_t *active_vtl, uint8_t *enable_vtl_prot, uint8_t *default_prot_mask);
 
 #endif /* VSM_HV_HYPERV_H */

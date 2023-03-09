@@ -38,4 +38,16 @@ union hv_register_vsm_partition_config {
 
 };
 
+union hv_register_vsm_vp_status {
+	uint64_t as_u64;
+
+	struct {
+		uint64_t active_vtl : 4;
+		uint64_t active_mbec_enabled : 1;
+		uint64_t reserved_z0 : 11;
+		uint64_t enabled_vtl_set : 16;
+		uint64_t reserved_z1 : 32;
+	};
+};
+
 #endif /* VSM_HV_REGISTER_H */

@@ -11,7 +11,7 @@
 
 .extern sk_init_boot_processor
 
-.extern vsm_return_to_normal_mode
+.extern vsm_return_to_normal_mode_from_init
 .extern vsm_dispatch_loop
 
 /*
@@ -19,6 +19,7 @@
  * to enter VTL1).
  */
 
+.align 8
 FUNC _start , :
 	/* Load the GDT  */
 	lgdt _gdtr
@@ -73,7 +74,7 @@ clear_nex_bss:
 
 paging_setup:
 	/* Set up the IDT */
-	call setup_idt
+#	call setup_idt
 
 	/* Enable Console */
 	call console_init
@@ -113,10 +114,7 @@ paging_setup:
 	mov $0, %r11d
 
 	/* Return to VTL 0. */
-	call vsm_return_to_normal_mode
-
-	/* Enter the dispatch loop. */
-	call vsm_dispatch_loop
+	call vsm_return_to_normal_mode_from_init
 
 	/* We should never reach here. */
 	jmp .

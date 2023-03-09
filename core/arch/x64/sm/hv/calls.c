@@ -82,7 +82,7 @@ TEE_Result hv_get_vsm_code_page_offsets(uint16_t *vtl_call_offset,
 	return TEE_SUCCESS;
 }
 
-TEE_Result hv_set_vsm_partition_info(bool enable_vtl_protection,
+TEE_Result hv_set_vsm_partition_config(bool enable_vtl_protection,
 	uint8_t default_vtl_protection_mask)
 {
 	enum hv_status status;
@@ -207,4 +207,71 @@ TEE_Result hv_modify_vtl_protection_mask(uint64_t gpa_page_list[],
 
 	/* Done */
 	return status == HvStatusSuccess ? TEE_SUCCESS : TEE_ERROR_GENERIC;
+}
+
+TEE_Result hv_get_vsm_partition_info(uint8_t *active_vtl, uint8_t *enable_vtl_prot,
+				     uint8_t *default_prot_mask)
+{
+	int ret;
+	uint64_t flags;
+	/* Input parameters for HvGetVpRegisters hypercall */
+	struct hv_input_get_vp_registers *hvin;
+	/* Return value for the same */
+	union hv_register_value *hvout;
+	union hv_register_vsm_vp_status vsm_vp_status = { 0 };
+	union hv_register_vsm_partition_config vsm_partition_config = { 0 };
+
+	/* Acquire the input and output pages */
+	hvin = hv_acquire_hypercall_input_page();
+	hvout = hv_acquire_hypercall_output_page();
+
+	/* Fill in the hypercall parameters */
+	hvin->partition_id = HV_PARTITION_ID_SELF;
+	hvin->vp_index = HV_VP_INDEX_SELF;
+	hvin->input_vtl.as_u8 = 0;
+	hvin->reserved8_z = 0;
+	hvin->reserved16_z = 0;
+	hvin->names[0] = HvRegisterVsmVpStatus;
+
+	/* Disable interrupts */
+	flags = sk_irq_save();
+
+	/* Perform the hypercall */
+	ret = hv_rep_hypercall(HvCallGetVpRegisters, 1, 0, hvin, hvout);
+
+	/* Enable interrupts */
+	sk_irq_restore(flags);
+
+	if (ret != HvStatusSuccess)
+		return TEE_ERROR_GENERIC;
+
+	vsm_vp_status = (union hv_register_vsm_vp_status)hvout->as_u64;
+	*active_vtl = vsm_vp_status.active_vtl;
+
+
+	hvin->partition_id = HV_PARTITION_ID_SELF;
+	hvin->vp_index = HV_VP_INDEX_SELF;
+	hvin->input_vtl.as_u8 = 0;
+	hvin->reserved8_z = 0;
+	hvin->reserved16_z = 0;
+	hvin->names[0] = HvRegisterVsmPartitionConfig;
+
+	/* Disable interrupts */
+	flags = sk_irq_save();
+
+	/* Perform the hypercall */
+	ret = hv_rep_hypercall(HvCallGetVpRegisters, 1, 0, hvin, hvout);
+
+	/* Enable interrupts */
+	sk_irq_restore(flags);
+
+	if (ret != HvStatusSuccess)
+		return TEE_ERROR_GENERIC;
+
+	vsm_partition_config = (union hv_register_vsm_partition_config)hvout->as_u64;
+	*enable_vtl_prot = vsm_partition_config.enable_vtl_protection;
+	*default_prot_mask = vsm_partition_config.default_vtl_protection_mask;
+
+
+	return TEE_SUCCESS;
 }

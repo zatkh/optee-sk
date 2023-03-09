@@ -16,6 +16,8 @@ FUNC vsm_return_to_normal_mode , :
 	# The Control value must be zero.
 	# The Function ID for VTLRETURN is 0x12.
 
+	addl $1, entry_count(%rip)	#increment the entry counter
+	movl entry_count(%rip), %r11d	#Pass it back to VTL0 in r11
 	mov     $0x0,  %rax
 	mov     $0x12, %rcx
 
@@ -33,7 +35,6 @@ KEEP_INIT vsm_return_to_normal_mode
 FUNC vsm_dispatch_loop , :
 
 DispatchLoop:
-
 	#
 	# On entry into VTL 1, the state of the registers is as follows:
 	#
@@ -123,3 +124,39 @@ DispatchLoop:
 
 END_FUNC vsm_dispatch_loop
 KEEP_INIT vsm_dispatch_loop
+
+
+FUNC vsm_return_to_normal_mode_from_init , :
+
+	leaq active_vtl(%rip), %rdi
+	leaq enable_vtl_prot(%rip), %rsi
+	leaq default_prot_mask(%rip), %rdx
+
+	call hv_get_vsm_partition_info
+
+	movzbl active_vtl(%rip), %edi		#A0
+	movzbl enable_vtl_prot(%rip), %esi	#A1
+	movzbl default_prot_mask(%rip), %edx	#A2
+
+	call vsm_return_to_normal_mode
+
+	call vsm_dispatch_loop
+
+END_FUNC vsm_return_to_normal_mode_from_init
+KEEP_INIT vsm_return_to_normal_mode_from_init
+
+.data
+.align 8
+
+	active_vtl:
+		.byte 0xff
+
+	enable_vtl_prot:
+		.byte 0xff
+
+	default_prot_mask:
+		.byte 0xff
+
+	.globl entry_count
+	entry_count:
+		.long 0

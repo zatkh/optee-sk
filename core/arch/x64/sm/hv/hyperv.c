@@ -90,7 +90,7 @@ static void hv_init_default_vtl_protections(void)
 {
 	TEE_Result res;
 
-	res = hv_set_vsm_partition_info(true, HV_PAGE_ACCESS_ALL);
+	res = hv_set_vsm_partition_config(true, HV_PAGE_ACCESS_ALL);
 	if (res != TEE_SUCCESS)
 		panic("Unable to enable and set default VTL protections.");
 }

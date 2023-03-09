@@ -88,6 +88,7 @@ union hv_input_vtl {
 
 enum hv_register_name {
 	HvRegisterVsmCodePageOffsets = 0x000D0002,
+	HvRegisterVsmVpStatus = 0x000D0003,
 	HvRegisterVsmPartitionConfig = 0x000D0007
 };
 
