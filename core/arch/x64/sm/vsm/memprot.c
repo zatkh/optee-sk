@@ -89,3 +89,30 @@ TEE_Result vsm_protect_optee_pages(void)
 
 	return res;
 }
+
+#ifdef CFG_LVBS_KERNEL_HVCI
+TEE_Result vsm_restrict_memory(paddr_t start, size_t size, uint32_t permissions)
+{
+	TEE_Result res;
+
+	size_t i;
+	size_t page_count;
+
+	uint64_t *gpa_page_list;
+
+	/* Assert that the region to protect is page-aligned */
+	if (((start % VSM_PAGE_SIZE)) != 0 || ((size % VSM_PAGE_SIZE) != 0))
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* Compute the number of pages to protect */
+	page_count = size / VSM_PAGE_SIZE;
+
+	for (i = 0 ; i < page_count ; i++)
+		gpa_page_list[i] = VSM_PAGE_TO_PFN(VSM_PAGE_AT(start, i));
+
+	/* set VTL 0 access rights on these pages */
+	res = hv_modify_vtl_protection_mask(gpa_page_list, &page_count, permissions);
+
+	return res;
+}
+#endif

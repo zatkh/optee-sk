@@ -21,6 +21,7 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 
 	DMSG("Dispatch call id 0x%X", params->a0);
 
+#ifdef CFG_LVBS_KERNEL_HVCI
 	/**
 	 *  For now use params->a7 to pass back status to VTL0 since console
 	 *  support is not yet enabled
@@ -28,6 +29,7 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 	switch(params->a0) {
 		case VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY:
 			/* Temporary to ensure we have landed here */
+			vsm_restrict_memory(params->a1, params->a2, params->a3);
 			params->a6 = VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY;
 			break;
 		case VSM_VTL_CALL_FUNC_ID_LOCK_CR:
@@ -39,7 +41,7 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 			break;
 	}
 	return;
-
+#endif
 	/**
 	 * Code inherited from Mariner code base.
 	 * Keeping it till we understand the full scope of LVBS and whethe
@@ -52,7 +54,7 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 		DMSG("Call is a generic SMC");
 
 		/*
-		 * A0 contains the SMC Function ID.
+		 * A0 contains the SMC Function ID. Note that on x86 arch there is no SMC instruction.
 		 * 
 		 * See ARM DEN 0028B, table 2-1 for the meaning of its bits.
 		 */

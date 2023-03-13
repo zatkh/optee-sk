@@ -559,3 +559,6 @@ CFG_SHOW_CONF_ON_BOOT ?= n
 # to a TA, so a TPM Service could use it to extend any measurement
 # taken before the service was up and running.
 CFG_CORE_TPM_EVENT_LOG ?= n
+
+# Enables LVBS Hyper-V-assisted kernel code integrity enforcement (part of HVCI functionality) 
+CFG_LVBS_KERNEL_HVCI ?= y

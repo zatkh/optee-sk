@@ -16,9 +16,9 @@ export CROSS_COMPILE64=$GCC_TOOLCHAIN_PATH/x86_64-linux-gnu-
 export  O=$TOP_DIR/out/x64-plat-x86_64
 export  CFG_TEE_BENCHMARK=n
 export  CFG_TEE_CORE_LOG_LEVEL=1
+export CFG_LVBS_KERNEL_HVCI=y
 #export  CFG_WITH_USER_TA=n
 export  DEBUG=1
-export O=./out
 
 if $INSTALL_DEPENDENCY
 then
@@ -28,3 +28,9 @@ then
     pip3 install pycryptodomex
 
 fi
+
+echo "building optee_os from:"
+echo $TOP_DIR
+#cd $TOP_DIR
+#make clean
+#make
