@@ -22,6 +22,7 @@ export CFG_DEBUG_INFO=y
 export CFG_LVBS_KERNEL_HVCI=y
 #export  CFG_WITH_USER_TA=n
 export  DEBUG=1
+export O=./out
 
 if $INSTALL_DEPENDENCY
 then
@@ -31,9 +32,3 @@ then
     pip3 install pycryptodomex
 
 fi
-
-echo "building optee_os from:"
-echo $TOP_DIR
-#cd $TOP_DIR
-#make clean
-#make
