@@ -91,14 +91,14 @@ TEE_Result vsm_protect_optee_pages(void)
 }
 
 #ifdef CFG_LVBS_KERNEL_HVCI
-TEE_Result vsm_restrict_memory(paddr_t start, size_t size, uint32_t permissions)
+TEE_Result vsm_restrict_memory(uint64_t start, size_t size, uint32_t permissions)
 {
 	TEE_Result res;
 
 	size_t i;
 	size_t page_count;
 
-	uint64_t *gpa_page_list;
+	uint64_t *pfns;
 
 	/* Assert that the region to protect is page-aligned */
 	if (((start % VSM_PAGE_SIZE)) != 0 || ((size % VSM_PAGE_SIZE) != 0))
@@ -107,11 +107,19 @@ TEE_Result vsm_restrict_memory(paddr_t start, size_t size, uint32_t permissions)
 	/* Compute the number of pages to protect */
 	page_count = size / VSM_PAGE_SIZE;
 
-	for (i = 0 ; i < page_count ; i++)
-		gpa_page_list[i] = VSM_PAGE_TO_PFN(VSM_PAGE_AT(start, i));
+	/* Set up the list of Page Frame Numbers (PFNs) */
+	pfns = malloc(page_count * sizeof(*pfns));
+	if (!pfns)
+		return TEE_ERROR_OUT_OF_MEMORY;
 
-	/* set VTL 0 access rights on these pages */
-	res = hv_modify_vtl_protection_mask(gpa_page_list, &page_count, permissions);
+	for (i = 0 ; i < page_count ; i++)
+		pfns[i] = VSM_PAGE_TO_PFN(VSM_PAGE_AT(start, i));
+
+	/* Revoke all VTL 0 access rights on these pages */
+	res = hv_modify_vtl_protection_mask(pfns, &page_count, permissions);
+
+	/* Free the PFN list */
+	free(pfns);
 
 	return res;
 }

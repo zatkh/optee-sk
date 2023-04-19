@@ -197,6 +197,8 @@ TEE_Result hv_modify_vtl_protection_mask(uint64_t gpa_page_list[],
 		pages_remaining -= pages_processed;
 		total_pages_processed += pages_processed;
 
+		DMSG("HvCallModifyVtlProtectionMask status%d", status);
+
 		/* See how things went */
 		if (status != HvStatusSuccess)
 			break;

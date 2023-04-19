@@ -52,7 +52,7 @@ void vsm_dispatch_entry(struct vsm_vtl_params *params);
 TEE_Result vsm_protect_optee_pages(void);
 
 #ifdef CFG_LVBS_KERNEL_HVCI
-TEE_Result vsm_restrict_memory(paddr_t start, size_t size, uint32_t permissions);
+TEE_Result vsm_restrict_memory(uint64_t start, size_t size, uint32_t permissions);
 #endif
 
 #endif /* VSM_VSM_H */

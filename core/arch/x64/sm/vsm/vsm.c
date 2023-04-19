@@ -28,12 +28,17 @@ static void vsm_dispatch_call(struct vsm_vtl_params *params)
 	 */
 	switch(params->a0) {
 		case VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY:
-			/* Temporary to ensure we have landed here */
-			vsm_restrict_memory(params->a1, params->a2, params->a3);
-			params->a6 = VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY;
+			uint64_t start_hi= params->a1;
+			uint64_t start_lo= params->a2;
+			uint64_t start= (start_hi << 32) + start_lo;
+			res= vsm_restrict_memory(start, params->a3, params->a4);
+			if (res != TEE_SUCCESS)
+				DMSG("vsm_restrict_memory failes%x, paddr:%lx, size:%x, perm:%x", res, start, params->a3, params->a4);
+			else 
+				DMSG("vsm_restrict_memory is ok %x, paddr:%lx, size:%x, perm:%x", res, start, params->a3, params->a4);
+			params->a6 = res;
 			break;
 		case VSM_VTL_CALL_FUNC_ID_LOCK_CR:
-			/* Temporary to ensure we have landed here */
 			params->a6 = VSM_VTL_CALL_FUNC_ID_LOCK_CR;
 			break;
 		default:
