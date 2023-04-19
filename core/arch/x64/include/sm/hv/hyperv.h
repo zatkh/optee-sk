@@ -66,4 +66,8 @@ TEE_Result hv_modify_vtl_protection_mask(uint64_t gpa_page_list[],
 /* Temporary API added for confirming VTL1 initializations */
 TEE_Result hv_get_vsm_partition_info(uint8_t *active_vtl, uint8_t *enable_vtl_prot, uint8_t *default_prot_mask);
 
+#ifdef CFG_LVBS_KERNEL_HVCI
+TEE_Result hv_enable_mbec(void);
+#endif
+
 #endif /* VSM_HV_HYPERV_H */

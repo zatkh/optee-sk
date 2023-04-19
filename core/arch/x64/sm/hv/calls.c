@@ -277,3 +277,54 @@ TEE_Result hv_get_vsm_partition_info(uint8_t *active_vtl, uint8_t *enable_vtl_pr
 
 	return TEE_SUCCESS;
 }
+
+#ifdef CFG_LVBS_KERNEL_HVCI
+
+// This function enables mbec for VTL0 
+// Note that only higher level VTLs can enable mbec for lower level VTLs
+TEE_Result hv_enable_mbec(void)
+{
+	enum hv_status status;
+
+	uint64_t flags;
+
+	struct hv_input_set_vp_registers *hvin;
+
+	union hv_register_value register_value;
+	union hv_register_vsm_partition_config *vsm_partition_config;
+
+	uint32_t elements_processed;
+
+	//enable mbec
+	register_value.as_u64 = 0x00000001;
+
+	/* Acquire the input page */
+	hvin = hv_acquire_hypercall_input_page();
+
+	/* Fill in the hypercall parameters */
+	hvin->partition_id = HV_PARTITION_ID_SELF;
+	hvin->vp_index = HV_VP_INDEX_SELF;
+	hvin->input_vtl.as_u8 = 0;
+	hvin->reserved8_z = 0;
+	hvin->reserved16_z = 0;
+	hvin->elements[0].name = HvRegisterVsmVpSecureConfigVtl0;
+	hvin->elements[0].value = register_value;
+
+	/* Disable interrupts */
+	flags = sk_irq_save();
+
+	/* Perform the hypercall */
+	status = hv_hypercall(HvCallSetVpRegisters, hvin, NULL, 1,
+		&elements_processed);
+
+	/* Enable interrupts */
+	sk_irq_restore(flags);
+
+	/* Check the return value, as provided by Hyper-V */
+	if (status != HvStatusSuccess)
+		return TEE_ERROR_GENERIC;
+
+	/* Done */
+	return TEE_SUCCESS;
+}
+#endif

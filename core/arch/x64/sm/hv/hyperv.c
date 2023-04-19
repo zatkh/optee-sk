@@ -117,4 +117,9 @@ void hv_init(void)
 
 	/* Initialize default VTL protections (prereq for VTL 1 memory isolation) */
 	hv_init_default_vtl_protections();
+
+	/* init mbec on VTL0 */
+#ifdef CFG_LVBS_KERNEL_HVCI
+	hv_enable_mbec();
+#endif
 }

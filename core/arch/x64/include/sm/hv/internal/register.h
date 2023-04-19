@@ -50,4 +50,37 @@ union hv_register_vsm_vp_status {
 	};
 };
 
+union hv_register_vsm_capabilities {
+	uint64_t as_u64;
+
+	struct {
+		uint64_t dr_shared : 1;
+		uint64_t mbec_vtl_mask : 16;
+		uint64_t deny_lower_vtl_startup : 1;
+		uint64_t reserved_z : 46;
+	};
+};
+
+enum t_hv_register_name {
+	HvRegisterVsmVpSecureConfigVtl0 = 0x000D0010,
+	HvRegisterVsmVpSecureConfigVtl1 = 0x000D0011,
+};
+
+union t_hv_register_value {
+	uint64_t as_u64;
+	uint32_t as_u32;
+	uint16_t as_u16;
+	uint8_t as_u8;
+};
+
+union hv_register_vsm_vp_secure_vtl_config {
+	uint64_t as_u64;
+
+	struct {
+		uint64_t mbec_enabled : 1;
+		uint64_t tlb_locked : 1;
+		uint64_t reserved: 62;
+	};
+};
+
 #endif /* VSM_HV_REGISTER_H */
