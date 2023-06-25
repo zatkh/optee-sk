@@ -6,7 +6,7 @@
 
 export TOP_DIR=$1
 export INSTALL_DEPENDENCY=$2
-export ARCH=x64
+export ARCH=x86
 export CC=x86_64-linux-gnu-gcc
 export CXX=x86_64-linux-gnu-gcc-g++
 export TA_DEV_KIT_ROOT=$TOP_DIR/
