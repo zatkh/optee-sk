@@ -3,7 +3,26 @@
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 
-	.macro FUNC name colon section=default
+#if defined(__aarch64__)
+#include <arm64_bti.S>
+#elif defined(__riscv)
+#include <riscv.S>
+#endif
+
+#if defined(__aarch64__) && ((defined(__KERNEL__) && defined(CFG_CORE_BTI)) || \
+			     (!defined(__KERNEL__) && defined(CFG_TA_BTI)))
+#define BTI(...) __VA_ARGS__
+#else
+#define BTI(...)
+#endif
+
+#if defined(CFG_UNWIND) && defined(__arm__)
+#define UNWIND(...) __VA_ARGS__
+#else
+#define UNWIND(...)
+#endif
+
+	.macro FUNC name colon section=default align=4 _bti=default
 	.ifc	\section\(),default
 	.section .text.\name
 	.else

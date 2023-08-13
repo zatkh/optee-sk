@@ -8,8 +8,7 @@
 #include <console.h>
 #include <drivers/gic.h>
 #include <drivers/serial8250_uart.h>
-#include <kernel/generic_boot.h>
-#include <kernel/interrupt.h>
+#include <kernel/boot.h>
 #include <kernel/misc.h>
 #include <kernel/mutex.h>
 #include <kernel/panic.h>
@@ -28,7 +27,6 @@
 
 #define PLAT_HW_UNIQUE_KEY_LENGTH 32
 
-static struct gic_data gic_data;
 static struct serial8250_uart_data console_data;
 static uint8_t plat_huk[PLAT_HW_UNIQUE_KEY_LENGTH];
 
@@ -39,29 +37,14 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICD_BASE, GICD_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE,
 		  SERIAL8250_UART_REG_SIZE);
 
-void main_init_gic(void)
+void primary_init_intc(void)
 {
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = (vaddr_t)phys_to_virt(GICC_BASE, MEM_AREA_IO_SEC);
-	gicd_base = (vaddr_t)phys_to_virt(GICD_BASE, MEM_AREA_IO_SEC);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GICC_BASE, GICD_BASE);
 }
 
-void main_secondary_init_gic(void)
+void main_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
-}
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
+	gic_cpu_init();
 }
 
 static const struct thread_handlers handlers = {

@@ -57,14 +57,21 @@
 #endif
 #endif
 #define __rodata	__section(".rodata" __SECTION_FLAGS_RODATA)
-#define __rodata_unpaged __section(".rodata.__unpaged" __SECTION_FLAGS_RODATA)
-#ifdef CFG_VIRTUALIZATION
+#define __rodata_dummy	__section(".rodata.dummy" __SECTION_FLAGS_RODATA)
+#define __rodata_unpaged(x) \
+	__section(".rodata.__unpaged." x __SECTION_FLAGS_RODATA)
+#ifdef CFG_CORE_ASLR
+#define __relrodata_unpaged(x) __section(".data.rel.ro.__unpaged." x)
+#else
+#define __relrodata_unpaged(x) __rodata_unpaged(x)
+#endif
+#ifdef CFG_NS_VIRTUALIZATION
 #define __nex_bss		__section(".nex_bss")
 #define __nex_data		__section(".nex_data")
-#else  /* CFG_VIRTUALIZATION */
+#else  /* CFG_NS_VIRTUALIZATION */
 #define __nex_bss
 #define __nex_data
-#endif	/* CFG_VIRTUALIZATION */
+#endif	/* CFG_NS_VIRTUALIZATION */
 #define __noprof	__attribute__((no_instrument_function))
 
 #define __compiler_bswap64(x)	__builtin_bswap64((x))
@@ -250,4 +257,21 @@
 #define __compiler_atomic_store(p, val) \
 	__atomic_store_n((p), (val), __ATOMIC_RELAXED)
 
+#define barrier() asm volatile ("" : : : "memory")
+
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#if __has_attribute(__fallthrough__)
+#define fallthrough __attribute__((__fallthrough__))
+#else
+#define fallthrough do {} while (0) /* fallthrough */
+#endif
+
+#ifndef __clang__
+#define __no_stackprot __attribute__((__optimize__ ("-fno-stack-protector")))
+#else
+#define __no_stackprot
+#endif
 #endif /*COMPILER_H*/

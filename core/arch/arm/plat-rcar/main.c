@@ -72,3 +72,29 @@ void console_init(void)
 	scif_uart_init(&console_data, CONSOLE_UART_BASE);
 	register_serial_console(&console_data.chip);
 }
+
+#ifdef CFG_RCAR_ROMAPI
+/* Should only seed from a hardware random number generator */
+static_assert(!IS_ENABLED(CFG_WITH_SOFTWARE_PRNG));
+
+unsigned long plat_get_aslr_seed(void)
+{
+	unsigned long seed = 0;
+
+	/* On RCAR we can get hw random bytes on early boot stages */
+	if (crypto_rng_read(&seed, sizeof(seed)))
+		panic();
+
+	return seed;
+}
+#endif
+
+void primary_init_intc(void)
+{
+	gic_init(GICC_BASE, GICD_BASE);
+}
+
+void main_secondary_init_intc(void)
+{
+	gic_cpu_init();
+}

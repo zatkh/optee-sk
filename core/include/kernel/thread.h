@@ -17,6 +17,13 @@
 #include <kernel/vfp.h>
 #include <mm/pgt_cache.h>
 #endif
+#include <util.h>
+#include <kernel/thread_arch.h>
+
+#define THREAD_FLAGS_COPY_ARGS_ON_RETURN	BIT(0)
+#define THREAD_FLAGS_FOREIGN_INTR_ENABLE	BIT(1)
+#define THREAD_FLAGS_EXIT_ON_FOREIGN_INTR	BIT(2)
+#define THREAD_FLAGS_FFA_ONLY			BIT(3)
 
 #define THREAD_ID_0		0
 #define THREAD_ID_INVALID	-1
@@ -260,6 +267,13 @@ struct thread_specific_data {
 	unsigned int abort_core;
 	struct thread_abort_regs abort_regs;
 #endif /*ARM32 || ARM64*/
+#ifdef CFG_CORE_DEBUG_CHECK_STACKS
+	bool stackcheck_recursion;
+#endif
+	unsigned int syscall_recursion;
+#ifdef CFG_FAULT_MITIGATION
+	struct ftmn_func_arg *ftmn_arg;
+#endif
 };
 
 #endif /*__ASSEMBLER__*/
@@ -281,6 +295,12 @@ struct thread_handlers {
 };
 void thread_init_primary(const struct thread_handlers *handlers);
 void thread_init_per_cpu(void);
+
+#if defined(CFG_WITH_STACK_CANARIES)
+void thread_update_canaries(void);
+#else
+static inline void thread_update_canaries(void) { }
+#endif
 
 struct thread_core_local *thread_get_core_local(void);
 

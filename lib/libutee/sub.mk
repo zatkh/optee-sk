@@ -16,7 +16,9 @@ srcs-y += tee_api_property.c
 srcs-y += tee_socket_pta.c
 srcs-y += tee_system_pta.c
 srcs-y += tee_tcpudp_socket.c
+srcs-y += tcb.c
 srcs-y += user_ta_entry.c
+srcs-y += user_ta_entry_compat.c
 srcs-y += utee_misc.c
 
 ifeq ($(CFG_TA_MBEDTLS_MPI),y)

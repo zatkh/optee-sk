@@ -31,7 +31,6 @@ static const struct thread_handlers handlers = {
 	.system_reset = pm_do_nothing,
 };
 
-static struct gic_data gic_data;
 static struct pl011_data console_data;
 
 register_phys_mem_pgdir(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE,
@@ -40,16 +39,6 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC, GIC_BASE, CORE_MMU_PGDIR_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, THERMAL_SENSOR_BASE,
 			CORE_MMU_PGDIR_SIZE);
 
-const struct thread_handlers *generic_boot_get_handlers(void)
-{
-	return &handlers;
-}
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
-}
-
 void console_init(void)
 {
 	pl011_init(&console_data, CONSOLE_UART_BASE, CONSOLE_UART_CLK_IN_HZ,
@@ -57,20 +46,9 @@ void console_init(void)
 	register_serial_console(&console_data.chip);
 }
 
-void main_init_gic(void)
+void primary_init_intc(void)
 {
-	vaddr_t gicd_base;
-
-	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
-					  MEM_AREA_IO_SEC);
-
-	if (!gicd_base)
-		panic();
-
-	/* On ARMv8-A, GIC configuration is initialized in TF-A */
-	gic_init_base_addr(&gic_data, 0, gicd_base);
-
-	itr_init(&gic_data.chip);
+	gic_init(0, GIC_BASE + GICD_OFFSET);
 }
 
 static enum itr_return timer_itr_cb(struct itr_handler *h __unused)

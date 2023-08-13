@@ -137,8 +137,7 @@ else ifneq (,$(filter $(PLATFORM_FLAVOR),$(mx7ulp-flavorlist)))
 $(call force,CFG_MX7ULP,y)
 $(call force,CFG_TEE_CORE_NB_CORE,1)
 $(call force,CFG_TZC380,n)
-$(call force,CFG_CSU,n)
-$(call force,CFG_NXP_CAAM,n)
+$(call force,CFG_IMX_CSU,n)
 include core/arch/arm/cpu/cortex-a7.mk
 else ifneq (,$(filter $(PLATFORM_FLAVOR),$(mx8mq-flavorlist)))
 $(call force,CFG_MX8MQ,y)
@@ -172,7 +171,39 @@ $(call force,CFG_ARM64_core,y)
 CFG_IMX_LPUART ?= y
 CFG_DRAM_BASE ?= 0x80000000
 CFG_TEE_CORE_NB_CORE ?= 4
+$(call force,CFG_IMX_OCOTP,n)
+else ifneq (,$(filter $(PLATFORM_FLAVOR),$(mx8dxl-flavorlist)))
+$(call force,CFG_MX8DXL,y)
+$(call force,CFG_ARM64_core,y)
+$(call force,CFG_IMX_SNVS,n)
+CFG_IMX_LPUART ?= y
+CFG_DRAM_BASE ?= 0x80000000
+$(call force,CFG_TEE_CORE_NB_CORE,2)
+$(call force,CFG_IMX_OCOTP,n)
 $(call force,CFG_NXP_CAAM,n)
+else ifneq (,$(filter $(PLATFORM_FLAVOR),$(mx8ulp-flavorlist)))
+$(call force,CFG_MX8ULP,y)
+$(call force,CFG_ARM64_core,y)
+CFG_IMX_LPUART ?= y
+CFG_DRAM_BASE ?= 0x80000000
+CFG_TEE_CORE_NB_CORE ?= 2
+$(call force,CFG_NXP_SNVS,n)
+$(call force,CFG_IMX_OCOTP,n)
+CFG_IMX_MU ?= y
+CFG_IMX_ELE ?= y
+else ifneq (,$(filter $(PLATFORM_FLAVOR),$(mx93-flavorlist)))
+$(call force,CFG_MX93,y)
+$(call force,CFG_ARM64_core,y)
+CFG_IMX_LPUART ?= y
+CFG_DRAM_BASE ?= 0x80000000
+CFG_TEE_CORE_NB_CORE ?= 2
+$(call force,CFG_NXP_SNVS,n)
+$(call force,CFG_IMX_OCOTP,n)
+$(call force,CFG_TZC380,n)
+$(call force,CFG_CRYPTO_DRIVER,n)
+$(call force,CFG_NXP_CAAM,n)
+CFG_IMX_MU ?= y
+CFG_IMX_ELE ?= y
 else
 $(error Unsupported PLATFORM_FLAVOR "$(PLATFORM_FLAVOR)")
 endif
@@ -318,7 +349,7 @@ $(call force,CFG_PL310,y)
 
 CFG_PL310_LOCKED ?= y
 CFG_ENABLE_SCTLR_RR ?= y
-CFG_SCU ?= y
+CFG_IMX_SCU ?= y
 endif
 
 ifeq ($(filter y, $(CFG_MX6QP) $(CFG_MX6Q) $(CFG_MX6D) $(CFG_MX6DL) $(CFG_MX6S)), y)
@@ -357,8 +388,7 @@ CFG_UART_BASE ?= UART1_BASE
 endif
 
 ifneq (,$(filter y, $(CFG_MX6) $(CFG_MX7)))
-$(call force,CFG_IMX_UART,y)
-CFG_CSU ?= y
+CFG_IMX_CSU ?= y
 endif
 
 ifeq ($(filter y, $(CFG_PSCI_ARM32)), y)
@@ -385,11 +415,17 @@ endif
 CFG_TZDRAM_START ?= ($(CFG_DRAM_BASE) - 0x02000000 + $(CFG_DDR_SIZE))
 CFG_TZDRAM_SIZE ?= 0x01e00000
 CFG_SHMEM_START ?= ($(CFG_TZDRAM_START) + $(CFG_TZDRAM_SIZE))
-CFG_SHMEM_SIZE ?= 0x00200000
 
 CFG_CRYPTO_SIZE_OPTIMIZATION ?= n
 CFG_WITH_STACK_CANARIES ?= y
 CFG_MMAP_REGIONS ?= 24
+
+# SE05X and OCOTP both implement tee_otp_get_die_id()
+ifeq ($(CFG_NXP_SE05X),y)
+$(call force,CFG_IMX_OCOTP,n)
+endif
+CFG_IMX_OCOTP ?= y
+CFG_IMX_DIGPROG ?= y
 
 # Almost all platforms include CAAM HW Modules, except the
 # ones forced to be disabled
@@ -412,6 +448,7 @@ $(call force,CFG_WITH_SOFTWARE_PRNG,y)
 ifneq (,$(filter y, $(CFG_MX6) $(CFG_MX7) $(CFG_MX7ULP)))
 CFG_IMX_CAAM ?= y
 endif
+
 endif
 
 # Cryptographic configuration

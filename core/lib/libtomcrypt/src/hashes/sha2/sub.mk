@@ -15,6 +15,13 @@ srcs-y += sha256.c
 endif
 endif
 
+//Decide the required changes from Line 19 to 29
+srcs-$(_CFG_CORE_LTC_SHA384_DESC) += sha384.c
+
+ifneq ($(_CFG_CORE_LTC_SHA512_ACCEL),y)
+srcs-$(_CFG_CORE_LTC_SHA512_DESC) += sha512.c
+endif
+
 srcs-$(call cfg-one-enabled, _CFG_CORE_LTC_SHA384 \
 			     _CFG_CORE_LTC_SHA384_DESC) += sha384.c
 srcs-$(call cfg-one-enabled, _CFG_CORE_LTC_SHA512 \

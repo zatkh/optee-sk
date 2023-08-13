@@ -92,8 +92,9 @@ bool _core_is_buffer_inside(vaddr_t b, size_t bl, vaddr_t a, size_t al)
 	return false;
 }
 
-/* Returns true when buffer 'b' is fully contained in area 'a' */
-bool _core_is_buffer_outside(vaddr_t b, size_t bl, vaddr_t a, size_t al)
+/* Returns true when buffer 'b' is fully outside area 'a' */
+bool core_is_buffer_outside(paddr_t b, paddr_size_t bl,
+			    paddr_t a, paddr_size_t al)
 {
 	/* invalid config or "null size" return false */
 	if (!is_valid_conf_and_notnull_size(b, bl, a, al))

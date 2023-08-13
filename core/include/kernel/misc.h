@@ -10,6 +10,7 @@
 #include <arm.h>
 #endif
 #include <assert.h>
+#include <kernel/misc_arch.h>
 #include <kernel/thread.h>
 #include <types_ext.h>
 
@@ -33,4 +34,3 @@ uint32_t read_mode_lr(int cpu_mode);
 #endif
 
 #endif /*KERNEL_MISC_H*/
-

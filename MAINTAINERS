@@ -71,6 +71,46 @@ L:	Broadcom <bcm-optee-feedback-list.pdl@broadcom.com>
 S:	Maintained
 F:	core/arch/arm/plat-bcm/
 
+Core Drivers I2C
+R:	Jorge Ramirez <jorge@foundries.io> [@ldts]
+S:	Maintained
+F:	core/drivers/imx_i2c.c
+
+Core Drivers RNGB
+R:	Jorge Ramirez <jorge@foundries.io> [@ldts]
+S:	Maintained
+F:	core/drivers/imx_rngb.c
+
+Core Drivers SE050
+R:	Jorge Ramirez <jorge@foundries.io> [@ldts]
+S:	Maintained
+F:	core/drivers/crypto/se050
+
+Core Drivers Versal ACAP
+R:	Jorge Ramirez <jorge@foundries.io> [@ldts]
+S:	Maintained
+F:	core/drivers/crypto/versal/authenc.c
+F:	core/drivers/crypto/versal/ecc.c
+F:	core/drivers/crypto/versal/ipi.c
+F:	core/drivers/crypto/versal/rsa.c
+F:	core/drivers/versal_gpio.c
+F:	core/drivers/versal_huk.c
+F:	core/drivers/versal_mbox.c
+F:	core/drivers/versal_nvm.c
+F:	core/drivers/versal_pm.c
+F:	core/drivers/versal_puf.c
+F:	core/drivers/versal_sha3_384.c
+F:	core/drivers/versal_trng.c
+
+Core Drivers ZYNQMP
+R:	Jorge Ramirez <jorge@foundries.io> [@ldts]
+S:	Maintained
+F:	core/drivers/zynqmp_csu_aes.c
+F:	core/drivers/zynqmp_csu_puf.c
+F:	core/drivers/zynqmp_csudma.c
+F:	core/drivers/zynqmp_huk.c
+F:	core/drivers/zynqmp_pm.c
+
 Function Graph Tracer (ftrace) support
 R:	Sumit Garg <sumit.garg@linaro.org> [@b49020]
 S:	Maintained
@@ -81,6 +121,11 @@ HiSilicon D02
 R:	Linaro <op-tee@linaro.org> [@OP-TEE/linaro]
 S:	Maintained
 F:	core/arch/arm/plat-d02/
+
+HiSilicon D06
+R:	Xiaoxu Zeng <zengxiaoxu@huawei.com> [@xiaoxuZeng]
+S:	Maintained
+F:	core/arch/arm/plat-d06/
 
 HiSilicon HiKey (Kirin 620), HiKey960 (Kirin 960)
 R:	Linaro <op-tee@linaro.org> [@OP-TEE/linaro]
@@ -110,7 +155,7 @@ MediaTek MT8173 EVB
 S:	Orphan
 F:	core/arch/arm/plat-mediatek/
 
-NXP LS1021A, LS1043A-RDB, LS1046A-RDB, LS1012A-RDB, LS1012A-FRWY, LS1028A-RDB, LS1088A-RDB, LS2088A-RDB, LX2160A-RDB
+NXP LS1043A-RDB, LS1046A-RDB, LS1012A-RDB, LS1028A-RDB, LS1088A-RDB, LS2088A-RDB, LX2160A-RDB
 R:	Pankaj Gupta <pankaj.gupta@nxp.com> [@pangupta]
 R:	Sahil Malhotra <sahil.malhotra@nxp.com> [@sahilnxp]
 R:	[@OP-TEE/plat-ls]
@@ -140,6 +185,13 @@ R:	Peng Fan <peng.fan@nxp.com> [@MrVan]
 R:	Bryan O'Donoghue <bryan.odonoghue@linaro.org> [@bryanodonoghue]
 S:	Maintained
 F:	core/arch/arm/plat-imx/conf.mk
+
+PKCS#11 TA
+R:	Etienne Carriere <etienne.carriere@foss.st.com> [@etienne-lms]
+R:	Ruchika Gupta <gupta.ruchika@gmail.com> [@ruchi393]
+R:	Vesa Jääskeläinen <vesa.jaaskelainen@vaisala.com> [@vesajaaskelainen]
+S:	Maintained
+F:	ta/pkcs11
 
 QEMU (32 and 64 bits)
 R:	Linaro <op-tee@linaro.org> [@OP-TEE/linaro]
@@ -177,15 +229,17 @@ S:	Maintained
 F:	core/arch/arm/plat-sprd/
 
 STMicroelectronics b2260-h410, b2120-h310/h410
-R:	Linaro <op-tee@linaro.org> [@OP-TEE/linaro]
-R:	[@OP-TEE/plat-stm]
+R:	Etienne Carriere <etienne.carriere@foss.st.com> [@etienne-lms]
 S:	Maintained
 F:	core/arch/arm/plat-stm/
 
 STMicroelectronics stm32mp1
-R:	Etienne Carriere <etienne.carriere@st.com>
+R:	Etienne Carriere <etienne.carriere@foss.st.com> [@etienne-lms]
 S:	Maintained
 F:	core/arch/arm/plat-stm32mp1/
+F:	core/drivers/stm32_*
+F:	core/drivers/stm32mp15_huk.c
+F:	core/drivers/stpmic1.c
 
 Texas Instruments AM43xx, AM57xx, DRA7xx, AM65x, J721E
 R:	Andrew F. Davis <afd@ti.com>
@@ -210,14 +264,18 @@ R:	Volodymyr Babchuk <vlad.babchuk@gmail.com>
 S:	Maintained
 F:	core/arch/arm/kernel/virtualization.c
 
+Aspeed AST2600, AST2700
+R:	Chia-Wei Wang <chiawei_wang@aspeedtech.com> [@ChiaweiW]
+R:	Neal Liu <neal_liu@aspeedtech.com> [@Neal-liu]
+S:	Maintained
+F:	core/arch/arm/plat-aspeed/
+
 THE REST
 M:	Joakim Bech <joakim.bech@linaro.org> [@jbech-linaro]
 M:	Jens Wiklander <jens.wiklander@linaro.org> [@jenswi-linaro]
-M:	Jerome Forissier <jerome@forissier.org> [@jforissier]
-M:	Linaro <op-tee@linaro.org> [@OP-TEE/linaro]
-R:	Etienne Carriere <etienne.carriere@linaro.org> [@etienne-lms]
-R:	Victor Chong <victor.chong@linaro.org> [@vchong]
-L:	tee-dev@lists.linaro.org
+M:	Jerome Forissier <jerome.forissier@linaro.org> [@jforissier]
+R:	Etienne Carriere <etienne.carriere@foss.st.com> [@etienne-lms]
+L:	op-tee@lists.trustedfirmware.org
 S:	Maintained
 F:	*
 F:	*/

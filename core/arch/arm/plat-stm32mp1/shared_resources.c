@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
- * Copyright (c) 2017-2019, STMicroelectronics
+ * Copyright (c) 2017-2023, STMicroelectronics
  */
 
+#include <config.h>
+#include <drivers/pinctrl.h>
 #include <drivers/stm32_etzpc.h>
 #include <drivers/stm32_gpio.h>
 #include <drivers/stm32mp1_etzpc.h>
@@ -11,7 +13,8 @@
 #include <initcall.h>
 #include <io.h>
 #include <keep.h>
-#include <kernel/generic_boot.h>
+#include <kernel/boot.h>
+#include <kernel/dt.h>
 #include <kernel/panic.h>
 #include <kernel/pm.h>
 #include <kernel/spinlock.h>
@@ -157,9 +160,11 @@ static const char __maybe_unused *shres2str_id_tbl[STM32MP1_SHRES_COUNT] = {
 	[STM32MP1_SHRES_PLL2_Q] = "PLL2_Q",
 	[STM32MP1_SHRES_PLL2_R] = "PLL2_R",
 	[STM32MP1_SHRES_PLL3] = "PLL3",
-	[STM32MP1_SHRES_PLL3_P] = "PLL3_P",
-	[STM32MP1_SHRES_PLL3_Q] = "PLL3_Q",
-	[STM32MP1_SHRES_PLL3_R] = "PLL3_R",
+	[STM32MP1_SHRES_MDMA] = "MDMA",
+	[STM32MP1_SHRES_SRAM1] = "SRAM1",
+	[STM32MP1_SHRES_SRAM2] = "SRAM2",
+	[STM32MP1_SHRES_SRAM3] = "SRAM3",
+	[STM32MP1_SHRES_SRAM4] = "SRAM4",
 };
 
 static __maybe_unused const char *shres2str_id(enum stm32mp_shres id)
@@ -179,7 +184,6 @@ static __maybe_unused const char *shres2str_state(enum stm32mp_shres id)
 }
 
 /* GPIOZ bank pin count depends on SoC variants */
-#ifdef CFG_DT
 /* A light count routine for unpaged context to not depend on DTB support */
 static int gpioz_nbpin = -1;
 
@@ -194,7 +198,8 @@ static unsigned int get_gpioz_nbpin(void)
 static TEE_Result set_gpioz_nbpin_from_dt(void)
 {
 	void *fdt = get_embedded_dt();
-	int node = fdt_path_offset(fdt, "/soc/pin-controller-z");
+	int node = fdt_node_offset_by_compatible(fdt, -1,
+						 "st,stm32mp157-z-pinctrl");
 	int count = stm32_get_gpio_count(fdt, node, GPIO_BANK_Z);
 
 	if (count < 0 || count > STM32MP1_GPIOZ_PIN_MAX_COUNT)
@@ -206,12 +211,6 @@ static TEE_Result set_gpioz_nbpin_from_dt(void)
 }
 /* Get GPIOZ pin count before drivers initialization, hence service_init() */
 service_init(set_gpioz_nbpin_from_dt);
-#else
-static unsigned int get_gpioz_nbpin(void)
-{
-	return STM32MP1_GPIOZ_PIN_MAX_COUNT;
-}
-#endif
 
 static void register_periph(enum stm32mp_shres id, enum shres_state state)
 {
@@ -370,6 +369,18 @@ static void register_periph_iomem(vaddr_t base, enum shres_state state)
 	case HASH1_BASE:
 		id = STM32MP1_SHRES_HASH1;
 		break;
+	case SRAM1_BASE:
+		id = STM32MP1_SHRES_SRAM1;
+		break;
+	case SRAM2_BASE:
+		id = STM32MP1_SHRES_SRAM2;
+		break;
+	case SRAM3_BASE:
+		id = STM32MP1_SHRES_SRAM3;
+		break;
+	case SRAM4_BASE:
+		id = STM32MP1_SHRES_SRAM4;
+		break;
 
 	/* Always non-secure resource cases */
 #ifdef CFG_WITH_NSEC_GPIOS
@@ -448,6 +459,54 @@ void stm32mp_register_non_secure_gpio(unsigned int bank, unsigned int pin)
 	}
 }
 
+void stm32mp_register_secure_pinctrl(struct pinctrl_state *pinctrl)
+{
+	unsigned int *bank = NULL;
+	unsigned int *pin = NULL;
+	size_t count = 0;
+	size_t n = 0;
+
+	stm32_gpio_pinctrl_bank_pin(pinctrl, NULL, NULL, &count);
+	if (!count)
+		return;
+
+	bank = calloc(count, sizeof(*bank));
+	pin = calloc(count, sizeof(*pin));
+	if (!bank || !pin)
+		panic();
+
+	stm32_gpio_pinctrl_bank_pin(pinctrl, bank, pin, &count);
+	for (n = 0; n < count; n++)
+		stm32mp_register_secure_gpio(bank[n], pin[n]);
+
+	free(bank);
+	free(pin);
+}
+
+void stm32mp_register_non_secure_pinctrl(struct pinctrl_state *pinctrl)
+{
+	unsigned int *bank = NULL;
+	unsigned int *pin = NULL;
+	size_t count = 0;
+	size_t n = 0;
+
+	stm32_gpio_pinctrl_bank_pin(pinctrl, NULL, NULL, &count);
+	if (!count)
+		return;
+
+	bank = calloc(count, sizeof(*bank));
+	pin = calloc(count, sizeof(*pin));
+	if (!bank || !pin)
+		panic();
+
+	stm32_gpio_pinctrl_bank_pin(pinctrl, bank, pin, &count);
+	for (n = 0; n < count; n++)
+		stm32mp_register_non_secure_gpio(bank[n], pin[n]);
+
+	free(bank);
+	free(pin);
+}
+
 static void lock_registering(void)
 {
 	registering_locked = true;
@@ -458,23 +517,6 @@ bool stm32mp_periph_is_secure(enum stm32mp_shres id)
 	lock_registering();
 
 	return shres_state[id] == SHRES_SECURE;
-}
-
-bool stm32mp_gpio_bank_is_shared(unsigned int bank)
-{
-	unsigned int not_secure = 0;
-	unsigned int pin = 0;
-
-	lock_registering();
-
-	if (bank != GPIO_BANK_Z)
-		return false;
-
-	for (pin = 0; pin < get_gpioz_nbpin(); pin++)
-		if (!stm32mp_periph_is_secure(STM32MP1_SHRES_GPIOZ(pin)))
-			not_secure++;
-
-	return not_secure > 0 && not_secure < get_gpioz_nbpin();
 }
 
 bool stm32mp_gpio_bank_is_non_secure(unsigned int bank)
@@ -641,22 +683,31 @@ static void set_etzpc_secure_configuration(void)
 	etzpc_configure_decprot(STM32MP1_ETZPC_DDRPHYC_ID, ETZPC_DECPROT_S_RW);
 
 	/* Configure ETZPC with peripheral registering */
-	etzpc_configure_decprot(STM32MP1_ETZPC_IWDG1_ID,
-				shres2decprot_attr(STM32MP1_SHRES_IWDG1));
-	etzpc_configure_decprot(STM32MP1_ETZPC_USART1_ID,
-				shres2decprot_attr(STM32MP1_SHRES_USART1));
-	etzpc_configure_decprot(STM32MP1_ETZPC_SPI6_ID,
-				shres2decprot_attr(STM32MP1_SHRES_SPI6));
-	etzpc_configure_decprot(STM32MP1_ETZPC_I2C4_ID,
-				shres2decprot_attr(STM32MP1_SHRES_I2C4));
-	etzpc_configure_decprot(STM32MP1_ETZPC_RNG1_ID,
-				shres2decprot_attr(STM32MP1_SHRES_RNG1));
-	etzpc_configure_decprot(STM32MP1_ETZPC_HASH1_ID,
-				shres2decprot_attr(STM32MP1_SHRES_HASH1));
-	etzpc_configure_decprot(STM32MP1_ETZPC_CRYP1_ID,
-				shres2decprot_attr(STM32MP1_SHRES_CRYP1));
-	etzpc_configure_decprot(STM32MP1_ETZPC_I2C6_ID,
-				shres2decprot_attr(STM32MP1_SHRES_I2C6));
+	config_lock_decprot(STM32MP1_ETZPC_IWDG1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_IWDG1));
+	config_lock_decprot(STM32MP1_ETZPC_USART1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_USART1));
+	config_lock_decprot(STM32MP1_ETZPC_SPI6_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_SPI6));
+	config_lock_decprot(STM32MP1_ETZPC_I2C4_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_I2C4));
+	config_lock_decprot(STM32MP1_ETZPC_RNG1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_RNG1));
+	config_lock_decprot(STM32MP1_ETZPC_HASH1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_HASH1));
+	config_lock_decprot(STM32MP1_ETZPC_CRYP1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_CRYP1));
+	config_lock_decprot(STM32MP1_ETZPC_I2C6_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_I2C6));
+
+	config_lock_decprot(STM32MP1_ETZPC_SRAM1_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_SRAM1));
+	config_lock_decprot(STM32MP1_ETZPC_SRAM2_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_SRAM2));
+	config_lock_decprot(STM32MP1_ETZPC_SRAM3_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_SRAM3));
+	config_lock_decprot(STM32MP1_ETZPC_SRAM4_ID,
+			    shres2decprot_attr(STM32MP1_SHRES_SRAM4));
 }
 #else
 static void set_etzpc_secure_configuration(void)
@@ -671,12 +722,23 @@ static void check_rcc_secure_configuration(void)
 	bool mckprot = stm32_rcc_is_mckprot();
 	enum stm32mp_shres id = STM32MP1_SHRES_COUNT;
 	bool have_error = false;
+	uint32_t state = 0;
 
-	if (stm32mp_is_closed_device() && !secure)
+	if (stm32_bsec_get_state(&state))
 		panic();
+
+	if (state == BSEC_STATE_SEC_CLOSED && !secure)
+		panic("Closed device mandates secure RCC");
 
 	for (id = 0; id < STM32MP1_SHRES_COUNT; id++) {
 		if  (shres_state[id] != SHRES_SECURE)
+			continue;
+
+		/* SRAMs have no constraints on RCC configuration */
+		if (id == STM32MP1_SHRES_SRAM1 ||
+		    id == STM32MP1_SHRES_SRAM2 ||
+		    id == STM32MP1_SHRES_SRAM3 ||
+		    id == STM32MP1_SHRES_SRAM4)
 			continue;
 
 		if ((mckprot_resource(id) && !mckprot) || !secure) {

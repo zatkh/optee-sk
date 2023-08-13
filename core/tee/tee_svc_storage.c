@@ -47,8 +47,8 @@ const struct tee_file_operations *tee_svc_storage_file_ops(uint32_t storage_id)
 /* Header of GP formated secure storage files */
 struct tee_svc_storage_head {
 	uint32_t attr_size;
-	uint32_t keySize;
-	uint32_t maxKeySize;
+	uint32_t objectSize;
+	uint32_t maxObjectSize;
 	uint32_t objectUsage;
 	uint32_t objectType;
 	uint32_t have_attrs;
@@ -94,83 +94,11 @@ static TEE_Result tee_svc_close_enum(struct user_ta_ctx *utc,
 	return TEE_SUCCESS;
 }
 
-/* "/TA_uuid/object_id" or "/TA_uuid/.object_id" */
-TEE_Result tee_svc_storage_create_filename(void *buf, size_t blen,
-					   struct tee_pobj *po, bool transient)
-{
-	uint8_t *file = buf;
-	uint32_t pos = 0;
-	uint32_t hslen = 1 /* Leading slash */
-			+ TEE_B2HS_HSBUF_SIZE(sizeof(TEE_UUID) + po->obj_id_len)
-			+ 1; /* Intermediate slash */
-
-	/* +1 for the '.' (temporary persistent object) */
-	if (transient)
-		hslen++;
-
-	if (blen < hslen)
-		return TEE_ERROR_SHORT_BUFFER;
-
-	file[pos++] = '/';
-	pos += tee_b2hs((uint8_t *)&po->uuid, &file[pos],
-			sizeof(TEE_UUID), hslen);
-	file[pos++] = '/';
-
-	if (transient)
-		file[pos++] = '.';
-
-	tee_b2hs(po->obj_id, file + pos, po->obj_id_len, hslen - pos);
-
-	return TEE_SUCCESS;
-}
-
-#ifdef CFG_REE_FS
-/* "/dirf.db" or "/<file number>" */
-TEE_Result
-tee_svc_storage_create_filename_dfh(void *buf, size_t blen,
-				    const struct tee_fs_dirfile_fileh *dfh)
-{
-	char *file = buf;
-	size_t pos = 0;
-	size_t l;
-
-	if (pos >= blen)
-		return TEE_ERROR_SHORT_BUFFER;
-
-	file[pos] = '/';
-	pos++;
-	if (pos >= blen)
-		return TEE_ERROR_SHORT_BUFFER;
-
-	l = blen - pos;
-	return tee_fs_dirfile_fileh_to_fname(dfh, file + pos, &l);
-}
-#endif
-
-/* "/TA_uuid" */
-TEE_Result tee_svc_storage_create_dirname(void *buf, size_t blen,
-					  const TEE_UUID *uuid)
-{
-	uint8_t *dir = buf;
-	uint32_t hslen = TEE_B2HS_HSBUF_SIZE(sizeof(TEE_UUID)) + 1;
-
-	if (blen < hslen)
-		return TEE_ERROR_SHORT_BUFFER;
-
-	dir[0] = '/';
-	tee_b2hs((uint8_t *)uuid, dir + 1, sizeof(TEE_UUID), hslen);
-
-	return TEE_SUCCESS;
-}
-
-static TEE_Result tee_svc_storage_remove_corrupt_obj(
-					struct tee_ta_session *sess,
-					struct tee_obj *o)
+static void remove_corrupt_obj(struct user_ta_ctx *utc, struct tee_obj *o)
 {
 	o->pobj->fops->remove(o->pobj);
-	tee_obj_close(to_user_ta_ctx(sess->ctx), o);
-
-	return TEE_SUCCESS;
+	if (!(utc->ta_ctx.flags & TA_FLAG_DONT_CLOSE_HANDLE_ON_CORRUPT_OBJECT))
+		tee_obj_close(utc, o);
 }
 
 static TEE_Result tee_svc_storage_read_head(struct tee_obj *o)
@@ -211,7 +139,7 @@ static TEE_Result tee_svc_storage_read_head(struct tee_obj *o)
 		goto exit;
 	}
 
-	res = tee_obj_set_type(o, head.objectType, head.maxKeySize);
+	res = tee_obj_set_type(o, head.objectType, head.maxObjectSize);
 	if (res != TEE_SUCCESS)
 		goto exit;
 
@@ -241,7 +169,7 @@ static TEE_Result tee_svc_storage_read_head(struct tee_obj *o)
 		goto exit;
 
 	o->info.dataSize = size - sizeof(head) - head.attr_size;
-	o->info.keySize = head.keySize;
+	o->info.objectSize = head.objectSize;
 	o->info.objectUsage = head.objectUsage;
 	o->info.objectType = head.objectType;
 	o->have_attrs = head.have_attrs;
@@ -265,6 +193,9 @@ TEE_Result syscall_storage_obj_open(unsigned long storage_id, void *object_id,
 	struct tee_obj *o = NULL;
 	char *file = NULL;
 
+	if (flags & ~valid_flags)
+		return TEE_ERROR_BAD_PARAMETERS;
+
 	if (!fops) {
 		res = TEE_ERROR_ITEM_NOT_FOUND;
 		goto exit;
@@ -275,20 +206,18 @@ TEE_Result syscall_storage_obj_open(unsigned long storage_id, void *object_id,
 		goto exit;
 	}
 
-	res = tee_ta_get_current_session(&sess);
-	if (res != TEE_SUCCESS)
-		goto err;
-	utc = to_user_ta_ctx(sess->ctx);
+	object_id = memtag_strip_tag(object_id);
+	if (object_id_len) {
+		res = bb_memdup_user_private(object_id, object_id_len,
+					     &oid_bbuf);
+		if (res)
+			goto exit;
+	}
 
-	res = tee_mmu_check_access_rights(&utc->uctx,
-					  TEE_MEMORY_ACCESS_READ,
-					  (uaddr_t) object_id,
-					  object_id_len);
-	if (res != TEE_SUCCESS)
-		goto err;
-
-	res = tee_pobj_get((void *)&sess->ctx->uuid, object_id,
-			   object_id_len, flags, false, fops, &po);
+	res = tee_pobj_get((void *)&sess->ctx->uuid, oid_bbuf,
+			   object_id_len, flags, TEE_POBJ_USAGE_OPEN, fops,
+			   &po);
+	bb_free(oid_bbuf, object_id_len);
 	if (res != TEE_SUCCESS)
 		goto err;
 
@@ -328,11 +257,9 @@ err:
 	if (res == TEE_ERROR_NO_DATA || res == TEE_ERROR_BAD_FORMAT)
 		res = TEE_ERROR_CORRUPT_OBJECT;
 	if (res == TEE_ERROR_CORRUPT_OBJECT && o)
-		tee_svc_storage_remove_corrupt_obj(sess, o);
+		remove_corrupt_obj(utc, o);
 
 exit:
-	free(file);
-	file = NULL;
 	return res;
 }
 
@@ -341,22 +268,24 @@ static TEE_Result tee_svc_storage_init_file(struct tee_obj *o,
 					    uint32_t len)
 {
 	TEE_Result res = TEE_SUCCESS;
-	struct tee_svc_storage_head head;
+	struct tee_svc_storage_head head = { };
 	const struct tee_file_operations *fops = o->pobj->fops;
 	void *attr = NULL;
 	size_t attr_size = 0;
 
 	if (attr_o) {
-		res = tee_obj_set_type(o, attr_o->info.objectType,
-				       attr_o->info.maxKeySize);
-		if (res)
-			return res;
-		res = tee_obj_attr_copy_from(o, attr_o);
-		if (res)
-			return res;
-		o->have_attrs = attr_o->have_attrs;
-		o->info.objectUsage = attr_o->info.objectUsage;
-		o->info.keySize = attr_o->info.keySize;
+		if (o != attr_o) {
+			res = tee_obj_set_type(o, attr_o->info.objectType,
+					       attr_o->info.maxObjectSize);
+			if (res)
+				return res;
+			res = tee_obj_attr_copy_from(o, attr_o);
+			if (res)
+				return res;
+			o->have_attrs = attr_o->have_attrs;
+			o->info.objectUsage = attr_o->info.objectUsage;
+			o->info.objectSize = attr_o->info.objectSize;
+		}
 		res = tee_obj_attr_to_binary(o, NULL, &attr_size);
 		if (res)
 			return res;
@@ -378,8 +307,8 @@ static TEE_Result tee_svc_storage_init_file(struct tee_obj *o,
 
 	/* write head */
 	head.attr_size = attr_size;
-	head.keySize = o->info.keySize;
-	head.maxKeySize = o->info.maxKeySize;
+	head.objectSize = o->info.objectSize;
+	head.maxObjectSize = o->info.maxObjectSize;
 	head.objectUsage = o->info.objectUsage;
 	head.objectType = o->info.objectType;
 	head.have_attrs = o->have_attrs;
@@ -388,7 +317,9 @@ static TEE_Result tee_svc_storage_init_file(struct tee_obj *o,
 			   &head, sizeof(head), attr, attr_size, data, len,
 			   &o->fh);
 
-	if (!res)
+	if (res)
+		o->ds_pos = 0;
+	else
 		o->info.dataSize = len;
 exit:
 	free(attr);
@@ -409,6 +340,9 @@ TEE_Result syscall_storage_obj_create(unsigned long storage_id, void *object_id,
 	struct tee_pobj *po = NULL;
 	struct tee_obj *o = NULL;
 
+	if (flags & ~valid_flags)
+		return TEE_ERROR_BAD_PARAMETERS;
+
 	if (!fops)
 		return TEE_ERROR_ITEM_NOT_FOUND;
 
@@ -420,13 +354,17 @@ TEE_Result syscall_storage_obj_create(unsigned long storage_id, void *object_id,
 		return res;
 	utc = to_user_ta_ctx(sess->ctx);
 
-	res = tee_mmu_check_access_rights(&utc->uctx, TEE_MEMORY_ACCESS_READ,
-					  (uaddr_t)object_id, object_id_len);
-	if (res != TEE_SUCCESS)
-		goto err;
+	if (object_id_len) {
+		res = bb_memdup_user_private(object_id, object_id_len,
+					     &oid_bbuf);
+		if (res)
+			return res;
+	}
 
-	res = tee_pobj_get((void *)&sess->ctx->uuid, object_id,
-			   object_id_len, flags, true, fops, &po);
+	res = tee_pobj_get((void *)&sess->ctx->uuid, oid_bbuf,
+			   object_id_len, flags, TEE_POBJ_USAGE_CREATE,
+			   fops, &po);
+	bb_free(oid_bbuf, object_id_len);
 	if (res != TEE_SUCCESS)
 		goto err;
 
@@ -447,17 +385,6 @@ TEE_Result syscall_storage_obj_create(unsigned long storage_id, void *object_id,
 		}
 	}
 
-	o = tee_obj_alloc();
-	if (o == NULL) {
-		res = TEE_ERROR_OUT_OF_MEMORY;
-		goto err;
-	}
-
-	o->info.handleFlags =
-	    TEE_HANDLE_FLAG_PERSISTENT | TEE_HANDLE_FLAG_INITIALIZED;
-	o->flags = flags;
-	o->pobj = po;
-
 	if (attr != TEE_HANDLE_NULL) {
 		res = tee_obj_get(utc, tee_svc_uref_to_vaddr(attr),
 				  &attr_o);
@@ -465,16 +392,56 @@ TEE_Result syscall_storage_obj_create(unsigned long storage_id, void *object_id,
 			goto err;
 	}
 
-	res = tee_svc_storage_init_file(o, attr_o, data, len);
-	if (res != TEE_SUCCESS)
-		goto err;
+	if (!obj && attr_o &&
+	    !(attr_o->info.handleFlags & TEE_HANDLE_FLAG_PERSISTENT)) {
+		/*
+		 * The caller expects the supplied attributes handle to be
+		 * transformed into a persistent object.
+		 */
+		uint32_t saved_flags = attr_o->info.handleFlags;
 
-	po = NULL; /* o owns it from now on */
-	tee_obj_add(utc, o);
+		attr_o->info.handleFlags = TEE_HANDLE_FLAG_PERSISTENT |
+					   TEE_HANDLE_FLAG_INITIALIZED | flags;
+		attr_o->pobj = po;
+		res = tee_svc_storage_init_file(attr_o,
+						flags & TEE_DATA_FLAG_OVERWRITE,
+						attr_o, data, len);
+		if (res) {
+			attr_o->info.handleFlags = saved_flags;
+			attr_o->pobj = NULL;
+			goto err;
+		}
+	} else {
+		o = tee_obj_alloc();
+		if (!o) {
+			res = TEE_ERROR_OUT_OF_MEMORY;
+			goto err;
+		}
 
-	res = tee_svc_copy_kaddr_to_uref(obj, o);
-	if (res != TEE_SUCCESS)
-		goto oclose;
+		o->info.handleFlags = TEE_HANDLE_FLAG_PERSISTENT |
+				      TEE_HANDLE_FLAG_INITIALIZED | flags;
+		o->pobj = po;
+
+		res = tee_svc_storage_init_file(o,
+						flags & TEE_DATA_FLAG_OVERWRITE,
+						attr_o, data, len);
+		if (res != TEE_SUCCESS)
+			goto err;
+
+		po = NULL; /* o owns it from now on */
+		tee_obj_add(utc, o);
+
+		if (obj) {
+			res = copy_kaddr_to_uref(obj, o);
+			if (res != TEE_SUCCESS)
+				goto oclose;
+		}
+
+		tee_pobj_create_final(o->pobj);
+
+		if (!obj)
+			tee_obj_close(utc, o);
+	}
 
 	return TEE_SUCCESS;
 
@@ -536,6 +503,7 @@ TEE_Result syscall_storage_obj_rename(unsigned long obj, void *object_id,
 	struct tee_obj *o = NULL;
 	char *new_file = NULL;
 	char *old_file = NULL;
+	void *oid_bbuf = NULL;
 
 	if (object_id_len > TEE_OBJECT_ID_MAX_LEN)
 		return TEE_ERROR_BAD_PARAMETERS;
@@ -564,16 +532,20 @@ TEE_Result syscall_storage_obj_rename(unsigned long obj, void *object_id,
 		goto exit;
 	}
 
-	res = tee_mmu_check_access_rights(&utc->uctx, TEE_MEMORY_ACCESS_READ,
-					  (uaddr_t)object_id, object_id_len);
-	if (res != TEE_SUCCESS)
-		goto exit;
+	object_id = memtag_strip_tag(object_id);
+	if (object_id_len) {
+		res = bb_memdup_user_private(object_id, object_id_len,
+					     &oid_bbuf);
+		if (res)
+			goto exit;
+	}
 
 	/* reserve dest name */
 	fops = o->pobj->fops;
-	res = tee_pobj_get((void *)&sess->ctx->uuid, object_id,
+	res = tee_pobj_get((void *)&sess->ctx->uuid, oid_bbuf,
 			   object_id_len, TEE_DATA_FLAG_ACCESS_WRITE_META,
-			   false, fops, &po);
+			   TEE_POBJ_USAGE_RENAME, fops, &po);
+	bb_free(oid_bbuf, object_id_len);
 	if (res != TEE_SUCCESS)
 		goto exit;
 
@@ -718,7 +690,8 @@ TEE_Result syscall_storage_start_enum(unsigned long obj_enum,
 }
 
 TEE_Result syscall_storage_next_enum(unsigned long obj_enum,
-			TEE_ObjectInfo *info, void *obj_id, uint64_t *len)
+				     struct utee_object_info *info,
+				     void *obj_id, uint64_t *len)
 {
 	struct tee_ta_session *sess = NULL;
 	struct tee_storage_enum *e = NULL;
@@ -727,6 +700,7 @@ TEE_Result syscall_storage_next_enum(unsigned long obj_enum,
 	TEE_Result res = TEE_SUCCESS;
 	struct tee_obj *o = NULL;
 	uint64_t l = 0;
+	struct utee_object_info bbuf = { };
 
 	res = tee_ta_get_current_session(&sess);
 	if (res != TEE_SUCCESS)
@@ -739,11 +713,8 @@ TEE_Result syscall_storage_next_enum(unsigned long obj_enum,
 		goto exit;
 
 	/* check rights of the provided buffers */
-	res = tee_mmu_check_access_rights(&utc->uctx,
-					  TEE_MEMORY_ACCESS_WRITE |
-					  TEE_MEMORY_ACCESS_ANY_OWNER,
-					  (uaddr_t)info,
-					  sizeof(TEE_ObjectInfo));
+	res = vm_check_access_rights(&utc->uctx, TEE_MEMORY_ACCESS_WRITE,
+				     (uaddr_t)info, sizeof(*info));
 	if (res != TEE_SUCCESS)
 		goto exit;
 
@@ -786,8 +757,22 @@ TEE_Result syscall_storage_next_enum(unsigned long obj_enum,
 	if (res != TEE_SUCCESS)
 		goto exit;
 
-	memcpy(info, &o->info, sizeof(TEE_ObjectInfo));
-	memcpy(obj_id, o->pobj->obj_id, o->pobj->obj_id_len);
+	bbuf = (struct utee_object_info){
+		.obj_type = o->info.objectType,
+		.obj_size = o->info.objectSize,
+		.max_obj_size = o->info.maxObjectSize,
+		.obj_usage = o->info.objectUsage,
+		.data_size = o->info.dataSize,
+		.data_pos = o->info.dataPosition,
+		.handle_flags = o->info.handleFlags,
+	};
+	res = copy_to_user(info, &bbuf, sizeof(bbuf));
+	if (res)
+		goto exit;
+
+	res = copy_to_user(obj_id, o->pobj->obj_id, o->pobj->obj_id_len);
+	if (res)
+		goto exit;
 
 	l = o->pobj->obj_id_len;
 	res = tee_svc_copy_to_user(len, &l, sizeof(*len));
@@ -859,7 +844,7 @@ TEE_Result syscall_storage_obj_read(unsigned long obj, void *data, size_t len,
 	if (res != TEE_SUCCESS) {
 		if (res == TEE_ERROR_CORRUPT_OBJECT) {
 			EMSG("Object corrupt");
-			tee_svc_storage_remove_corrupt_obj(sess, o);
+			remove_corrupt_obj(utc, o);
 		}
 		goto exit;
 	}
@@ -918,8 +903,13 @@ TEE_Result syscall_storage_obj_write(unsigned long obj, void *data, size_t len)
 		goto exit;
 	}
 	res = o->pobj->fops->write(o->fh, pos_tmp, data, len);
-	if (res != TEE_SUCCESS)
+	if (res != TEE_SUCCESS) {
+		if (res == TEE_ERROR_CORRUPT_OBJECT) {
+			EMSG("Object corrupt");
+			remove_corrupt_obj(utc, o);
+		}
 		goto exit;
+	}
 
 	o->info.dataPosition += len;
 	if (o->info.dataPosition > o->info.dataSize)
@@ -976,7 +966,7 @@ TEE_Result syscall_storage_obj_trunc(unsigned long obj, size_t len)
 		break;
 	case TEE_ERROR_CORRUPT_OBJECT:
 		EMSG("Object corruption");
-		(void)tee_svc_storage_remove_corrupt_obj(sess, o);
+		remove_corrupt_obj(to_user_ta_ctx(sess->ctx), o);
 		break;
 	default:
 		res = TEE_ERROR_GENERIC;

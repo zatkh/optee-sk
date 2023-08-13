@@ -27,7 +27,7 @@
 #error This file is not to be used with LPAE
 #endif
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 #error Currently V7 MMU code does not support virtualization
 #endif
 
@@ -228,13 +228,13 @@ static struct mmu_partition default_partition = {
 	.tables_used = 0,
 };
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 static struct mmu_partition *current_prtn[CFG_TEE_CORE_NB_CORE];
 #endif
 
 static struct mmu_partition *get_prtn(void)
 {
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	return current_prtn[get_core_pos()];
 #else
 	return &default_partition;
@@ -471,6 +471,7 @@ void core_mmu_set_info_table(struct core_mmu_table_info *tbl_info,
 		unsigned level, vaddr_t va_base, void *table)
 {
 	tbl_info->level = level;
+	tbl_info->next_level = level + 1;
 	tbl_info->table = table;
 	tbl_info->va_base = va_base;
 	assert(level <= 2);
@@ -798,7 +799,6 @@ void core_init_mmu_regs(struct core_mmu_config *cfg)
 	 */
 	cfg->ttbcr = TTBCR_N_VALUE;
 }
-KEEP_PAGER(core_init_mmu_regs);
 
 enum core_mmu_fault core_mmu_get_fault_type(uint32_t fsr)
 {

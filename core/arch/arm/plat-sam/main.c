@@ -30,7 +30,7 @@
 #include <console.h>
 #include <drivers/atmel_uart.h>
 #include <io.h>
-#include <kernel/generic_boot.h>
+#include <kernel/boot.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
 #include <kernel/pm_stubs.h>
@@ -384,4 +384,10 @@ static int matrix_init(void)
 void plat_primary_init_early(void)
 {
 	matrix_init();
+}
+
+void primary_init_intc(void)
+{
+	if (atmel_saic_setup())
+		panic("Failed to init interrupts\n");
 }

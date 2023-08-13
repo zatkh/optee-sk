@@ -26,7 +26,16 @@ $($(_cached))
 endef
 cc-option = $(strip $(call _cc-option,$(1),$(2)))
 
-comp-cflags$(sm) = -std=gnu99
+__cc-option = $(if $(shell $(CC$(sm)) $(1) -c -x c /dev/null -o /dev/null 2>&1 >/dev/null),$(2),$(1))
+_cc-opt-cached-var-name = cached-cc-option$(subst =,~,$(strip $(1)))$(subst $(empty) $(empty),,$(CC$(sm)))
+define _cc-option
+$(eval _cached := $(call _cc-opt-cached-var-name,$1))
+$(eval $(_cached) := $(if $(filter $(origin $(_cached)),undefined),$(call __cc-option,$(1),$(2)),$($(_cached))))
+$($(_cached))
+endef
+cc-option = $(strip $(call _cc-option,$(1),$(2)))
+
+comp-cflags$(sm) = -std=gnu11
 comp-aflags$(sm) =
 comp-cppflags$(sm) =
 
@@ -49,7 +58,13 @@ comp-cflags-warns-high = \
 	-Wmissing-prototypes -Wnested-externs -Wpointer-arith \
 	-Wshadow -Wstrict-prototypes -Wswitch-default \
 	-Wwrite-strings \
-	-Wno-missing-field-initializers -Wno-format-zero-length
+	-Wno-missing-field-initializers -Wno-format-zero-length \
+	-Wno-c2x-extensions
+comp-cflags-warns-high += $(call cc-option,-Wpacked-not-aligned)
+comp-cflags-warns-high += $(call cc-option,-Waddress-of-packed-member)
+ifeq ($(CFG_WARN_DECL_AFTER_STATEMENT),y)
+comp-cflags-warns-high += $(call cc-option,-Wdeclaration-after-statement)
+endif
 comp-cflags-warns-medium = \
 	-Waggregate-return -Wredundant-decls
 comp-cflags-warns-low = \
@@ -266,7 +281,7 @@ cleanfiles := $$(cleanfiles) $2 \
 		$$(dtb-predts-$2) $$(dtb-predep-$2) \
 		$$(dtb-dep-$2) $$(dtb-cmd-file-$2)
 
-dtb-cppflags-$2	:= -Icore/include/ -x assembler-with-cpp \
+dtb-cppflags-$2 := -Icore/include/ -x assembler-with-cpp -Ulinux -Uunix \
 		   -E -ffreestanding $$(CPPFLAGS) \
 		   -MD -MF $$(dtb-predep-$2) -MT $2
 

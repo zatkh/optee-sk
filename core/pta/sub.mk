@@ -14,3 +14,6 @@ srcs-$(CFG_SYSTEM_PTA) += system.c
 srcs-y += hello_world.c
 
 subdirs-y += bcm
+subdirs-y += stm32mp
+subdirs-y += imx
+subdirs-y += k3

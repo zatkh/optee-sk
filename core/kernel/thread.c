@@ -17,6 +17,7 @@
 #include <io.h>
 #include <keep.h>
 #include <kernel/asan.h>
+#include <kernel/boot.h>
 #include <kernel/linker.h>
 #include <kernel/lockdep.h>
 #include <kernel/misc.h>
@@ -92,14 +93,8 @@ struct thread_ctx threads[CFG_NUM_THREADS];
 struct thread_core_local thread_core_local[CFG_TEE_CORE_NB_CORE] __nex_bss;
 
 #ifdef CFG_WITH_STACK_CANARIES
-#ifdef ARM32
-#define STACK_CANARY_SIZE	(4 * sizeof(uint32_t))
-#endif
-#ifdef ARM64
-#define STACK_CANARY_SIZE	(8 * sizeof(uint32_t))
-#endif
-#define START_CANARY_VALUE	0xdededede
-#define END_CANARY_VALUE	0xabababab
+static uint32_t start_canary_value = 0xdedede00;
+static uint32_t end_canary_value = 0xababab00;
 #define GET_START_CANARY(name, stack_num) name[stack_num][0]
 #define GET_END_CANARY(name, stack_num) \
 	name[stack_num][sizeof(name[stack_num]) / sizeof(uint32_t) - 1]
@@ -179,22 +174,61 @@ static void init_canaries(void)
 		uint32_t *start_canary = &GET_START_CANARY(name, n);	\
 		uint32_t *end_canary = &GET_END_CANARY(name, n);	\
 									\
-		*start_canary = START_CANARY_VALUE;			\
-		*end_canary = END_CANARY_VALUE;				\
-		DMSG("#Stack canaries for %s[%zu] with top at %p",	\
-			#name, n, (void *)(end_canary - 1));		\
-		DMSG("watch *%p", (void *)end_canary);			\
+		*start_canary = start_canary_value;			\
+		*end_canary = end_canary_value;				\
 	}
 
 	INIT_CANARY(stack_tmp);
 	INIT_CANARY(stack_abt);
-#if !defined(CFG_WITH_PAGER) && !defined(CFG_VIRTUALIZATION)
+#if !defined(CFG_WITH_PAGER) && !defined(CFG_NS_VIRTUALIZATION)
 	INIT_CANARY(stack_thread);
 #endif
 #endif/*CFG_WITH_STACK_CANARIES*/
 }
 
-#define CANARY_DIED(stack, loc, n) \
+#if defined(CFG_WITH_STACK_CANARIES)
+void thread_update_canaries(void)
+{
+	uint32_t canary[2] = { };
+	uint32_t exceptions = 0;
+
+	plat_get_random_stack_canaries(canary, ARRAY_SIZE(canary),
+				       sizeof(canary[0]));
+
+	exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
+
+	thread_check_canaries();
+
+	start_canary_value = canary[0];
+	end_canary_value = canary[1];
+	thread_init_canaries();
+
+	thread_unmask_exceptions(exceptions);
+}
+#endif
+
+#if defined(CFG_WITH_STACK_CANARIES)
+void thread_update_canaries(void)
+{
+	uint32_t canary[2] = { };
+	uint32_t exceptions = 0;
+
+	plat_get_random_stack_canaries(canary, ARRAY_SIZE(canary),
+				       sizeof(canary[0]));
+
+	exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
+
+	thread_check_canaries();
+
+	start_canary_value = canary[0];
+	end_canary_value = canary[1];
+	thread_init_canaries();
+
+	thread_unmask_exceptions(exceptions);
+}
+#endif
+
+#define CANARY_DIED(stack, loc, n, addr) \
 	do { \
 		EMSG_RAW("Dead canary at %s of '%s[%zu]'", #loc, #stack, n); \
 		panic(); \
@@ -206,25 +240,30 @@ void thread_check_canaries(void)
 	size_t n;
 
 	for (n = 0; n < ARRAY_SIZE(stack_tmp); n++) {
-		if (GET_START_CANARY(stack_tmp, n) != START_CANARY_VALUE)
-			CANARY_DIED(stack_tmp, start, n);
-		if (GET_END_CANARY(stack_tmp, n) != END_CANARY_VALUE)
-			CANARY_DIED(stack_tmp, end, n);
+		canary = &GET_START_CANARY(stack_tmp, n);
+		if (*canary != start_canary_value)
+			CANARY_DIED(stack_tmp, start, n, canary);
+		canary = &GET_END_CANARY(stack_tmp, n);
+		if (*canary != end_canary_value)
+			CANARY_DIED(stack_tmp, end, n, canary);
 	}
 
 	for (n = 0; n < ARRAY_SIZE(stack_abt); n++) {
-		if (GET_START_CANARY(stack_abt, n) != START_CANARY_VALUE)
-			CANARY_DIED(stack_abt, start, n);
-		if (GET_END_CANARY(stack_abt, n) != END_CANARY_VALUE)
-			CANARY_DIED(stack_abt, end, n);
-
+		canary = &GET_START_CANARY(stack_abt, n);
+		if (*canary != start_canary_value)
+			CANARY_DIED(stack_abt, start, n, canary);
+		canary = &GET_END_CANARY(stack_abt, n);
+		if (*canary != end_canary_value)
+			CANARY_DIED(stack_abt, end, n, canary);
 	}
-#if !defined(CFG_WITH_PAGER) && !defined(CFG_VIRTUALIZATION)
+#if !defined(CFG_WITH_PAGER) && !defined(CFG_NS_VIRTUALIZATION)
 	for (n = 0; n < ARRAY_SIZE(stack_thread); n++) {
-		if (GET_START_CANARY(stack_thread, n) != START_CANARY_VALUE)
-			CANARY_DIED(stack_thread, start, n);
-		if (GET_END_CANARY(stack_thread, n) != END_CANARY_VALUE)
-			CANARY_DIED(stack_thread, end, n);
+		canary = &GET_START_CANARY(stack_thread, n);
+		if (*canary != start_canary_value)
+			CANARY_DIED(stack_thread, start, n, canary);
+		canary = &GET_END_CANARY(stack_thread, n);
+		if (*canary != end_canary_value)
+			CANARY_DIED(stack_thread, end, n, canary);
 	}
 #endif
 #endif/*CFG_WITH_STACK_CANARIES*/
@@ -1164,8 +1203,7 @@ static void init_sec_mon(size_t pos __maybe_unused)
 }
 #endif /*ARM32 || ARM64*/
 
-#if defined(ARM32) || defined(ARM64)
-static uint32_t __maybe_unused get_midr_implementer(uint32_t midr)
+void __nostackcheck thread_init_core_local_stacks(void)
 {
 	return (midr >> MIDR_IMPLEMENTER_SHIFT) & MIDR_IMPLEMENTER_MASK;
 }
@@ -1268,7 +1306,7 @@ void thread_init_per_cpu(void)
 #endif
 }
 #endif /*ARM32 || ARM64*/
-
+ 
 #ifdef X64
 static void init_tss(struct thread_core_local *l)
 {
@@ -1292,7 +1330,7 @@ void thread_init_per_cpu(void)
 }
 #endif /*X64*/
 
-struct thread_specific_data *thread_get_tsd(void)
+struct thread_specific_data * __noprof thread_get_tsd(void)
 {
 	return &threads[thread_get_id()].tsd;
 }

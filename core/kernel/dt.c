@@ -4,13 +4,20 @@
  */
 
 #include <assert.h>
+#include <config.h>
+#include <initcall.h>
 #include <kernel/dt.h>
+#include <kernel/dt_driver.h>
+#include <kernel/interrupt.h>
 #include <kernel/linker.h>
 #include <libfdt.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
+#include <stdio.h>
 #include <string.h>
 #include <trace.h>
+
+static struct dt_descriptor external_dt __nex_bss;
 
 const struct dt_driver *dt_find_compatible_driver(const void *fdt, int offs)
 {
@@ -126,15 +133,15 @@ int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size)
 
 	assert(cpu_mmu_enabled());
 
-	st = _fdt_get_status(fdt, offs);
+	st = fdt_get_status(fdt, offs);
 	if (st == DT_STATUS_DISABLED)
 		return -1;
 
-	pbase = _fdt_reg_base_address(fdt, offs);
+	pbase = fdt_reg_base_address(fdt, offs);
 	if (pbase == DT_INFO_INVALID_REG)
 		return -1;
-	sz = _fdt_reg_size(fdt, offs);
-	if (sz < 0)
+	sz = fdt_reg_size(fdt, offs);
+	if (sz == DT_INFO_INVALID_REG_SIZE)
 		return -1;
 
 	if ((st & DT_STATUS_OK_SEC) && !(st & DT_STATUS_OK_NSEC))
@@ -160,7 +167,7 @@ int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size)
 }
 
 /* Read a physical address (n=1 or 2 cells) */
-static paddr_t _fdt_read_paddr(const uint32_t *cell, int n)
+static paddr_t fdt_read_paddr(const uint32_t *cell, int n)
 {
 	paddr_t addr;
 
@@ -181,16 +188,13 @@ static paddr_t _fdt_read_paddr(const uint32_t *cell, int n)
 #endif
 	}
 
-	if (!addr)
-		goto bad;
-
 	return addr;
 bad:
 	return DT_INFO_INVALID_REG;
 
 }
 
-paddr_t _fdt_reg_base_address(const void *fdt, int offs)
+paddr_t fdt_reg_base_address(const void *fdt, int offs)
 {
 	const void *reg;
 	int ncells;
@@ -209,13 +213,28 @@ paddr_t _fdt_reg_base_address(const void *fdt, int offs)
 	if (ncells < 0)
 		return DT_INFO_INVALID_REG;
 
-	return _fdt_read_paddr(reg, ncells);
+	return fdt_read_paddr(reg, ncells);
 }
 
-ssize_t _fdt_reg_size(const void *fdt, int offs)
+static size_t fdt_read_size(const uint32_t *cell, int n)
+{
+	uint32_t sz = 0;
+
+	sz = fdt32_to_cpu(*cell);
+	if (n == 2) {
+		if (sz)
+			return DT_INFO_INVALID_REG_SIZE;
+
+		cell++;
+		sz = fdt32_to_cpu(*cell);
+	}
+
+	return sz;
+}
+
+size_t fdt_reg_size(const void *fdt, int offs)
 {
 	const uint32_t *reg;
-	uint32_t sz;
 	int n;
 	int len;
 	int parent;
@@ -238,15 +257,7 @@ ssize_t _fdt_reg_size(const void *fdt, int offs)
 	if (n < 1 || n > 2)
 		return -1;
 
-	sz = fdt32_to_cpu(*reg);
-	if (n == 2) {
-		if (sz)
-			return -1;
-		reg++;
-		sz = fdt32_to_cpu(*reg);
-	}
-
-	return sz;
+	return fdt_read_size(reg, n);
 }
 
 static bool is_okay(const char *st, int len)
@@ -254,7 +265,7 @@ static bool is_okay(const char *st, int len)
 	return !strncmp(st, "ok", len) || !strncmp(st, "okay", len);
 }
 
-int _fdt_get_status(const void *fdt, int offs)
+int fdt_get_status(const void *fdt, int offs)
 {
 	const char *prop;
 	int st = 0;
@@ -282,7 +293,7 @@ int _fdt_get_status(const void *fdt, int offs)
 	return st;
 }
 
-void _fdt_fill_device_info(void *fdt, struct dt_node_info *info, int offs)
+void fdt_fill_device_info(const void *fdt, struct dt_node_info *info, int offs)
 {
 	struct dt_node_info dinfo = {
 		.reg = DT_INFO_INVALID_REG,
@@ -291,7 +302,8 @@ void _fdt_fill_device_info(void *fdt, struct dt_node_info *info, int offs)
 	};
 	const fdt32_t *cuint;
 
-	dinfo.reg = _fdt_reg_base_address(fdt, offs);
+	dinfo.reg = fdt_reg_base_address(fdt, offs);
+	dinfo.reg_size = fdt_reg_size(fdt, offs);
 
 	cuint = fdt_getprop(fdt, offs, "clocks", NULL);
 	if (cuint) {
@@ -305,7 +317,425 @@ void _fdt_fill_device_info(void *fdt, struct dt_node_info *info, int offs)
 		dinfo.reset = (int)fdt32_to_cpu(*cuint);
 	}
 
-	dinfo.status = _fdt_get_status(fdt, offs);
+	dinfo.interrupt = dt_get_irq_type_prio(fdt, offs, &dinfo.type,
+					       &dinfo.prio);
+
+	dinfo.status = fdt_get_status(fdt, offs);
 
 	*info = dinfo;
+}
+
+int fdt_read_uint32_array(const void *fdt, int node, const char *prop_name,
+			  uint32_t *array, size_t count)
+{
+	const fdt32_t *cuint = NULL;
+	int len = 0;
+	uint32_t i = 0;
+
+	cuint = fdt_getprop(fdt, node, prop_name, &len);
+	if (!cuint)
+		return len;
+
+	if ((uint32_t)len != (count * sizeof(uint32_t)))
+		return -FDT_ERR_BADLAYOUT;
+
+	for (i = 0; i < ((uint32_t)len / sizeof(uint32_t)); i++) {
+		*array = fdt32_to_cpu(*cuint);
+		array++;
+		cuint++;
+	}
+
+	return 0;
+}
+
+int fdt_read_uint32_index(const void *fdt, int node, const char *prop_name,
+			  int index, uint32_t *value)
+{
+	const fdt32_t *cuint = NULL;
+	int len = 0;
+
+	cuint = fdt_getprop(fdt, node, prop_name, &len);
+	if (!cuint)
+		return len;
+
+	if ((uint32_t)len < (sizeof(uint32_t) * (index + 1)))
+		return -FDT_ERR_BADLAYOUT;
+
+	*value = fdt32_to_cpu(cuint[index]);
+
+	return 0;
+}
+
+int fdt_read_uint32(const void *fdt, int node, const char *prop_name,
+		    uint32_t *value)
+{
+	return fdt_read_uint32_array(fdt, node, prop_name, value, 1);
+}
+
+uint32_t fdt_read_uint32_default(const void *fdt, int node,
+				 const char *prop_name, uint32_t dflt_value)
+{
+	uint32_t ret = dflt_value;
+
+	fdt_read_uint32_index(fdt, node, prop_name, 0, &ret);
+
+	return ret;
+}
+
+int fdt_get_reg_props_by_index(const void *fdt, int node, int index,
+			       paddr_t *base, size_t *size)
+{
+	const fdt32_t *prop = NULL;
+	int parent = 0;
+	int len = 0;
+	int address_cells = 0;
+	int size_cells = 0;
+	int cell = 0;
+
+	parent = fdt_parent_offset(fdt, node);
+	if (parent < 0)
+		return parent;
+
+	address_cells = fdt_address_cells(fdt, parent);
+	if (address_cells < 0)
+		return address_cells;
+
+	size_cells = fdt_size_cells(fdt, parent);
+	if (size_cells < 0)
+		return size_cells;
+
+	cell = index * (address_cells + size_cells);
+
+	prop = fdt_getprop(fdt, node, "reg", &len);
+	if (!prop)
+		return len;
+
+	if (((cell + address_cells + size_cells) * (int)sizeof(uint32_t)) > len)
+		return -FDT_ERR_BADVALUE;
+
+	if (base) {
+		*base = fdt_read_paddr(&prop[cell], address_cells);
+		if (*base == DT_INFO_INVALID_REG)
+			return -FDT_ERR_BADVALUE;
+	}
+
+	if (size) {
+		*size = fdt_read_size(&prop[cell + address_cells], size_cells);
+		if (*size == DT_INFO_INVALID_REG_SIZE)
+			return -FDT_ERR_BADVALUE;
+	}
+
+	return 0;
+}
+
+int fdt_get_reg_props_by_name(const void *fdt, int node, const char *name,
+			      paddr_t *base, size_t *size)
+{
+	int index = 0;
+
+	index = fdt_stringlist_search(fdt, node, "reg-names", name);
+	if (index < 0)
+		return index;
+
+	return fdt_get_reg_props_by_index(fdt, node, index, base, size);
+}
+
+int dt_getprop_as_number(const void *fdt, int nodeoffset, const char *name,
+			 uint64_t *num)
+{
+	const void *prop = NULL;
+	int len = 0;
+
+	prop = fdt_getprop(fdt, nodeoffset, name, &len);
+	if (!prop)
+		return len;
+
+	switch (len) {
+	case sizeof(uint32_t):
+		*num = fdt32_ld(prop);
+		return 0;
+	case sizeof(uint64_t):
+		*num = fdt64_ld(prop);
+		return 0;
+	default:
+		return -FDT_ERR_BADVALUE;
+	}
+}
+
+void *get_dt(void)
+{
+	void *fdt = get_embedded_dt();
+
+	if (!fdt)
+		fdt = get_external_dt();
+
+	return fdt;
+}
+
+void *get_secure_dt(void)
+{
+	void *fdt = get_embedded_dt();
+
+	if (!fdt && IS_ENABLED(CFG_MAP_EXT_DT_SECURE))
+		fdt = get_external_dt();
+
+	return fdt;
+}
+
+#if defined(CFG_EMBED_DTB)
+void *get_embedded_dt(void)
+{
+	static bool checked;
+
+	assert(cpu_mmu_enabled());
+
+	if (!checked) {
+		IMSG("Embedded DTB found");
+
+		if (fdt_check_header(embedded_secure_dtb))
+			panic("Invalid embedded DTB");
+
+		checked = true;
+	}
+
+	return embedded_secure_dtb;
+}
+#else
+void *get_embedded_dt(void)
+{
+	return NULL;
+}
+#endif /*CFG_EMBED_DTB*/
+
+#ifdef _CFG_USE_DTB_OVERLAY
+static int add_dt_overlay_fragment(struct dt_descriptor *dt, int ioffs)
+{
+	char frag[32] = { };
+	int offs = 0;
+	int ret = 0;
+
+	snprintf(frag, sizeof(frag), "fragment@%d", dt->frag_id);
+	offs = fdt_add_subnode(dt->blob, ioffs, frag);
+	if (offs < 0)
+		return offs;
+
+	dt->frag_id += 1;
+
+	ret = fdt_setprop_string(dt->blob, offs, "target-path", "/");
+	if (ret < 0)
+		return ret;
+
+	return fdt_add_subnode(dt->blob, offs, "__overlay__");
+}
+
+static int init_dt_overlay(struct dt_descriptor *dt, int __maybe_unused dt_size)
+{
+	int fragment = 0;
+
+	if (IS_ENABLED(CFG_EXTERNAL_DTB_OVERLAY)) {
+		if (!fdt_check_header(dt->blob)) {
+			fdt_for_each_subnode(fragment, dt->blob, 0)
+				dt->frag_id += 1;
+			return 0;
+		}
+	}
+
+	return fdt_create_empty_tree(dt->blob, dt_size);
+}
+#else
+static int add_dt_overlay_fragment(struct dt_descriptor *dt __unused, int offs)
+{
+	return offs;
+}
+
+static int init_dt_overlay(struct dt_descriptor *dt __unused,
+			   int dt_size __unused)
+{
+	return 0;
+}
+#endif /* _CFG_USE_DTB_OVERLAY */
+
+struct dt_descriptor *get_external_dt_desc(void)
+{
+	if (!IS_ENABLED(CFG_EXTERNAL_DT))
+		return NULL;
+
+	return &external_dt;
+}
+
+void init_external_dt(unsigned long phys_dt)
+{
+	struct dt_descriptor *dt = &external_dt;
+	void *fdt = NULL;
+	int ret = 0;
+
+	if (!IS_ENABLED(CFG_EXTERNAL_DT))
+		return;
+
+	if (!phys_dt) {
+		/*
+		 * No need to panic as we're not using the DT in OP-TEE
+		 * yet, we're only adding some nodes for normal world use.
+		 * This makes the switch to using DT easier as we can boot
+		 * a newer OP-TEE with older boot loaders. Once we start to
+		 * initialize devices based on DT we'll likely panic
+		 * instead of returning here.
+		 */
+		IMSG("No non-secure external DT");
+		return;
+	}
+
+	fdt = core_mmu_add_mapping(MEM_AREA_EXT_DT, phys_dt, CFG_DTB_MAX_SIZE);
+	if (!fdt)
+		panic("Failed to map external DTB");
+
+	dt->blob = fdt;
+
+	ret = init_dt_overlay(dt, CFG_DTB_MAX_SIZE);
+	if (ret < 0) {
+		EMSG("Device Tree Overlay init fail @ %#lx: error %d", phys_dt,
+		     ret);
+		panic();
+	}
+
+	ret = fdt_open_into(fdt, fdt, CFG_DTB_MAX_SIZE);
+	if (ret < 0) {
+		EMSG("Invalid Device Tree at %#lx: error %d", phys_dt, ret);
+		panic();
+	}
+
+	IMSG("Non-secure external DT found");
+}
+
+void *get_external_dt(void)
+{
+	if (!IS_ENABLED(CFG_EXTERNAL_DT))
+		return NULL;
+
+	assert(cpu_mmu_enabled());
+	return external_dt.blob;
+}
+
+static TEE_Result release_external_dt(void)
+{
+	int ret = 0;
+
+	if (!IS_ENABLED(CFG_EXTERNAL_DT))
+		return TEE_SUCCESS;
+
+	if (!external_dt.blob)
+		return TEE_SUCCESS;
+
+	ret = fdt_pack(external_dt.blob);
+	if (ret < 0) {
+		EMSG("Failed to pack Device Tree at 0x%" PRIxPA ": error %d",
+		     virt_to_phys(external_dt.blob), ret);
+		panic();
+	}
+
+	if (core_mmu_remove_mapping(MEM_AREA_EXT_DT, external_dt.blob,
+				    CFG_DTB_MAX_SIZE))
+		panic("Failed to remove temporary Device Tree mapping");
+
+	/* External DTB no more reached, reset pointer to invalid */
+	external_dt.blob = NULL;
+
+	return TEE_SUCCESS;
+}
+
+boot_final(release_external_dt);
+
+int add_dt_path_subnode(struct dt_descriptor *dt, const char *path,
+			const char *subnode)
+{
+	int offs = 0;
+
+	offs = fdt_path_offset(dt->blob, path);
+	if (offs < 0)
+		return offs;
+	offs = add_dt_overlay_fragment(dt, offs);
+	if (offs < 0)
+		return offs;
+	return fdt_add_subnode(dt->blob, offs, subnode);
+}
+
+static void set_dt_val(void *data, uint32_t cell_size, uint64_t val)
+{
+	if (cell_size == 1) {
+		fdt32_t v = cpu_to_fdt32((uint32_t)val);
+
+		memcpy(data, &v, sizeof(v));
+	} else {
+		fdt64_t v = cpu_to_fdt64(val);
+
+		memcpy(data, &v, sizeof(v));
+	}
+}
+
+int add_res_mem_dt_node(struct dt_descriptor *dt, const char *name,
+			paddr_t pa, size_t size)
+{
+	int offs = 0;
+	int ret = 0;
+	int addr_size = -1;
+	int len_size = -1;
+	bool found = true;
+	char subnode_name[80] = { };
+
+	offs = fdt_path_offset(dt->blob, "/reserved-memory");
+
+	if (offs < 0) {
+		found = false;
+		offs = 0;
+	}
+
+	if (IS_ENABLED2(_CFG_USE_DTB_OVERLAY)) {
+		len_size = sizeof(paddr_t) / sizeof(uint32_t);
+		addr_size = sizeof(paddr_t) / sizeof(uint32_t);
+	} else {
+		len_size = fdt_size_cells(dt->blob, offs);
+		if (len_size < 0)
+			return len_size;
+		addr_size = fdt_address_cells(dt->blob, offs);
+		if (addr_size < 0)
+			return addr_size;
+	}
+
+	if (!found) {
+		offs = add_dt_path_subnode(dt, "/", "reserved-memory");
+		if (offs < 0)
+			return offs;
+		ret = fdt_setprop_cell(dt->blob, offs, "#address-cells",
+				       addr_size);
+		if (ret < 0)
+			return ret;
+		ret = fdt_setprop_cell(dt->blob, offs, "#size-cells", len_size);
+		if (ret < 0)
+			return ret;
+		ret = fdt_setprop(dt->blob, offs, "ranges", NULL, 0);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = snprintf(subnode_name, sizeof(subnode_name),
+		       "%s@%" PRIxPA, name, pa);
+	if (ret < 0 || ret >= (int)sizeof(subnode_name))
+		DMSG("truncated node \"%s@%" PRIxPA"\"", name, pa);
+	offs = fdt_add_subnode(dt->blob, offs, subnode_name);
+	if (offs >= 0) {
+		uint32_t data[FDT_MAX_NCELLS * 2] = { };
+
+		set_dt_val(data, addr_size, pa);
+		set_dt_val(data + addr_size, len_size, size);
+		ret = fdt_setprop(dt->blob, offs, "reg", data,
+				  sizeof(uint32_t) * (addr_size + len_size));
+		if (ret < 0)
+			return ret;
+		ret = fdt_setprop(dt->blob, offs, "no-map", NULL, 0);
+		if (ret < 0)
+			return ret;
+	} else {
+		return offs;
+	}
+	return 0;
 }

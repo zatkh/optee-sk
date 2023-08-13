@@ -35,11 +35,148 @@ extern struct ta_head ta_head;
 uint32_t ta_param_types;
 TEE_Param ta_params[TEE_NUM_PARAMS];
 
+struct malloc_ctx *__ta_no_share_malloc_ctx;
+
+struct __elf_phdr_info __elf_phdr_info;
+
+struct phdr_info {
+	struct dl_phdr_info info;
+	TAILQ_ENTRY(phdr_info) link;
+};
+
+static TAILQ_HEAD(phdr_info_head, phdr_info) __phdr_info_head =
+		TAILQ_HEAD_INITIALIZER(__phdr_info_head);
+/*
+ * Keep track of how many modules have been initialized so that subsequent
+ * dlopen() calls will not run the same initializers again
+ */
+static size_t _num_mod_init;
+
+static int _init_iterate_phdr_cb(struct dl_phdr_info *info,
+				 size_t size __unused, void *data)
+{
+	struct phdr_info *qe = NULL;
+	size_t *count = data;
+
+	qe = malloc(sizeof(*qe));
+	if (!qe) {
+		EMSG("init/fini: out of memory");
+		abort();
+	}
+	qe->info = *info;
+	TAILQ_INSERT_TAIL(&__phdr_info_head, qe, link);
+	(*count)++;
+	return 0;
+}
+
+static void _get_fn_array(struct dl_phdr_info *info, Elf_Sword tag_a,
+			  Elf_Sword tag_s, void (***fn)(void), size_t *num_fn)
+{
+	const Elf_Phdr *phdr = NULL;
+	Elf_Dyn *dyn = NULL;
+	size_t num_dyn = 0;
+	size_t i = 0;
+	size_t j = 0;
+
+	for (i = 0; i < info->dlpi_phnum; i++) {
+		phdr = info->dlpi_phdr + i;
+		if (phdr->p_type != PT_DYNAMIC)
+			continue;
+		num_dyn = phdr->p_memsz / sizeof(Elf_Dyn);
+		dyn = (Elf_Dyn *)(phdr->p_vaddr + info->dlpi_addr);
+		for (j = 0; j < num_dyn; j++) {
+			if (*fn && *num_fn)
+				break;
+			if (dyn->d_tag == DT_NULL) {
+				break;
+			} else if (dyn->d_tag == tag_a) {
+				*fn = (void (**)(void))(dyn->d_un.d_ptr +
+							info->dlpi_addr);
+			} else if (dyn->d_tag == tag_s) {
+				*num_fn = dyn->d_un.d_val / sizeof(Elf_Addr);
+			}
+			dyn++;
+		}
+	}
+}
+
+void __utee_call_elf_init_fn(void)
+{
+	void (**fn)(void) = NULL;
+	size_t num_mod = 0;
+	size_t num_fn = 0;
+	size_t mod = 0;
+	size_t i = 0;
+	struct phdr_info *qe = NULL;
+	struct phdr_info *qe2 = NULL;
+
+	dl_iterate_phdr(_init_iterate_phdr_cb, &num_mod);
+
+	/* Reverse order: dependencies first */
+	TAILQ_FOREACH_REVERSE(qe, &__phdr_info_head, phdr_info_head, link) {
+		if (mod == num_mod - _num_mod_init)
+			break;
+		_get_fn_array(&qe->info, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, &fn,
+			      &num_fn);
+		for (i = 0; i < num_fn; i++)
+			fn[i]();
+		fn = NULL;
+		num_fn = 0;
+		mod++;
+	}
+	_num_mod_init += mod;
+
+	TAILQ_FOREACH_SAFE(qe, &__phdr_info_head, link, qe2) {
+		TAILQ_REMOVE(&__phdr_info_head, qe, link);
+		free(qe);
+	}
+}
+
+static int _fini_iterate_phdr_cb(struct dl_phdr_info *info,
+				 size_t size __unused, void *data __unused)
+{
+	void (**fn)(void) = NULL;
+	size_t num_fn = 0;
+	size_t i = 0;
+
+	_get_fn_array(info, DT_FINI_ARRAY, DT_FINI_ARRAYSZ, &fn, &num_fn);
+
+	for (i = 1; i <= num_fn; i++)
+		fn[num_fn - i]();
+
+	return 0;
+}
+
+void __utee_call_elf_fini_fn(void)
+{
+	dl_iterate_phdr(_fini_iterate_phdr_cb, NULL);
+}
+
+static unsigned int get_memtag_implementation(void)
+{
+	const char *s = "org.trustedfirmware.optee.cpu.feat_memtag_implemented";
+	uint32_t v = 0;
+
+	if (TEE_GetPropertyAsU32(TEE_PROPSET_TEE_IMPLEMENTATION, s, &v))
+		return 0;
+	return v;
+}
+
 static TEE_Result init_instance(void)
 {
 	trace_set_level(tahead_get_trace_level());
 	__utee_gprof_init();
 	malloc_add_pool(ta_heap, ta_heap_size);
+	if (__ta_no_share_heap_size) {
+		__ta_no_share_malloc_ctx = malloc(raw_malloc_get_ctx_size());
+		if (__ta_no_share_malloc_ctx) {
+			raw_malloc_init_ctx(__ta_no_share_malloc_ctx);
+			raw_malloc_add_pool(__ta_no_share_malloc_ctx,
+					    __ta_no_share_heap,
+					    __ta_no_share_heap_size);
+		}
+	}
+	memtag_init_ops(get_memtag_implementation());
 	_TEE_MathAPI_Init();
 	return TA_CreateEntryPoint();
 }
@@ -243,6 +380,36 @@ static TEE_Result entry_invoke_command(unsigned long session_id,
 	return res;
 }
 
+#if defined(CFG_TA_STATS)
+static TEE_Result entry_dump_memstats(unsigned long session_id __unused,
+				      struct utee_params *up)
+{
+	uint32_t param_types = 0;
+	TEE_Param params[TEE_NUM_PARAMS] = { };
+	struct malloc_stats stats = { };
+
+	from_utee_params(params, &param_types, up);
+	ta_header_save_params(param_types, params);
+
+	if (TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT,
+			    TEE_PARAM_TYPE_VALUE_OUTPUT,
+			    TEE_PARAM_TYPE_VALUE_OUTPUT,
+			    TEE_PARAM_TYPE_NONE) != param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	malloc_get_stats(&stats);
+	params[0].value.a = stats.allocated;
+	params[0].value.b = stats.max_allocated;
+	params[1].value.a = stats.size;
+	params[1].value.b = stats.num_alloc_fail;
+	params[2].value.a = stats.biggest_alloc_fail;
+	params[2].value.b = stats.biggest_alloc_fail_used;
+	to_utee_params(up, param_types, params);
+
+	return TEE_SUCCESS;
+}
+#endif
+
 TEE_Result __utee_entry(unsigned long func, unsigned long session_id,
 			struct utee_params *up, unsigned long cmd_id)
 {
@@ -258,9 +425,13 @@ TEE_Result __utee_entry(unsigned long func, unsigned long session_id,
 	case UTEE_ENTRY_FUNC_INVOKE_COMMAND:
 		res = entry_invoke_command(session_id, up, cmd_id);
 		break;
+#if defined(CFG_TA_STATS)
+	case UTEE_ENTRY_FUNC_DUMP_MEMSTATS:
+		res = entry_dump_memstats(session_id, up);
+		break;
+#endif
 	default:
-		res = 0xffffffff;
-		TEE_Panic(0);
+		res = TEE_ERROR_NOT_SUPPORTED;
 		break;
 	}
 	ta_header_save_params(0, NULL);

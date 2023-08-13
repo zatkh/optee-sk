@@ -74,55 +74,42 @@ void crypto_acipher_free_ecc_public_key(struct ecc_public_key *s)
 	if (!s)
 		return;
 
-	crypto_bignum_free(s->x);
-	crypto_bignum_free(s->y);
+	crypto_bignum_free(&s->x);
+	crypto_bignum_free(&s->y);
 }
 
-/*
- * curve is part of TEE_ECC_CURVE_NIST_P192,...
- * algo is part of TEE_ALG_ECDSA_P192,..., and 0 if we do not have it
- */
 static TEE_Result ecc_get_keysize(uint32_t curve, uint32_t algo,
 				  size_t *key_size_bytes, size_t *key_size_bits)
 {
-	/*
-	 * Note GPv1.1 indicates TEE_ALG_ECDH_NIST_P192_DERIVE_SHARED_SECRET
-	 * but defines TEE_ALG_ECDH_P192
-	 */
 	switch (curve) {
 	case TEE_ECC_CURVE_NIST_P192:
 		*key_size_bits = 192;
 		*key_size_bytes = 24;
-		if ((algo != 0) && (algo != TEE_ALG_ECDSA_P192) &&
-		    (algo != TEE_ALG_ECDH_P192))
-			return TEE_ERROR_BAD_PARAMETERS;
 		break;
 	case TEE_ECC_CURVE_NIST_P224:
 		*key_size_bits = 224;
 		*key_size_bytes = 28;
-		if ((algo != 0) && (algo != TEE_ALG_ECDSA_P224) &&
-		    (algo != TEE_ALG_ECDH_P224))
-			return TEE_ERROR_BAD_PARAMETERS;
 		break;
 	case TEE_ECC_CURVE_NIST_P256:
 		*key_size_bits = 256;
 		*key_size_bytes = 32;
-		if ((algo != 0) && (algo != TEE_ALG_ECDSA_P256) &&
-		    (algo != TEE_ALG_ECDH_P256))
-			return TEE_ERROR_BAD_PARAMETERS;
 		break;
 	case TEE_ECC_CURVE_NIST_P384:
 		*key_size_bits = 384;
 		*key_size_bytes = 48;
-		if ((algo != 0) && (algo != TEE_ALG_ECDSA_P384) &&
-		    (algo != TEE_ALG_ECDH_P384))
-			return TEE_ERROR_BAD_PARAMETERS;
 		break;
 	case TEE_ECC_CURVE_NIST_P521:
 		*key_size_bits = 521;
 		*key_size_bytes = 66;
 		if ((algo != 0) && (algo != TEE_ALG_ECDSA_P521) &&
 		    (algo != TEE_ALG_ECDH_P521))
+			return TEE_ERROR_BAD_PARAMETERS;
+		break;
+	case TEE_ECC_CURVE_SM2:
+		*key_size_bits = 256;
+		*key_size_bytes = 32;
+		if (algo != 0 && algo != TEE_ALG_SM2_DSA_SM3 &&
+		    algo != TEE_ALG_SM2_KEP && algo != TEE_ALG_SM2_PKE)
 			return TEE_ERROR_BAD_PARAMETERS;
 		break;
 	default:
@@ -375,4 +362,199 @@ out:
 	mbedtls_mpi_init(&ecdh.Qp.Y);
 	mbedtls_ecdh_free(&ecdh);
 	return res;
+}
+
+static const struct crypto_ecc_keypair_ops ecc_keypair_ops = {
+	.generate = ecc_generate_keypair,
+	.sign = ecc_sign,
+	.shared_secret = ecc_shared_secret,
+};
+
+static const struct crypto_ecc_keypair_ops sm2_pke_keypair_ops = {
+	.generate = ecc_generate_keypair,
+	.decrypt = sm2_mbedtls_pke_decrypt,
+};
+
+static const struct crypto_ecc_keypair_ops sm2_kep_keypair_ops = {
+	.generate = ecc_generate_keypair,
+};
+
+static const struct crypto_ecc_keypair_ops sm2_dsa_keypair_ops = {
+	.generate = ecc_generate_keypair,
+	.sign = sm2_mbedtls_dsa_sign,
+};
+
+const struct crypto_ecc_keypair_ops *
+crypto_asym_get_ecc_keypair_ops(uint32_t key_type)
+{
+	switch (key_type) {
+	case TEE_TYPE_ECDSA_KEYPAIR:
+	case TEE_TYPE_ECDH_KEYPAIR:
+		return &ecc_keypair_ops;
+	case TEE_TYPE_SM2_DSA_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_DSA))
+			return NULL;
+		return &sm2_dsa_keypair_ops;
+	case TEE_TYPE_SM2_PKE_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_PKE))
+			return NULL;
+		return &sm2_pke_keypair_ops;
+	case TEE_TYPE_SM2_KEP_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_KEP))
+			return NULL;
+		return &sm2_kep_keypair_ops;
+	default:
+		return NULL;
+	}
+}
+
+TEE_Result crypto_asym_alloc_ecc_keypair(struct ecc_keypair *s,
+					 uint32_t key_type,
+					 size_t key_size_bits)
+{
+	memset(s, 0, sizeof(*s));
+
+	switch (key_type) {
+	case TEE_TYPE_ECDSA_KEYPAIR:
+	case TEE_TYPE_ECDH_KEYPAIR:
+		s->ops = &ecc_keypair_ops;
+		break;
+	case TEE_TYPE_SM2_DSA_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_DSA))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_dsa_keypair_ops;
+		break;
+	case TEE_TYPE_SM2_PKE_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_PKE))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_pke_keypair_ops;
+		break;
+	case TEE_TYPE_SM2_KEP_KEYPAIR:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_KEP))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_kep_keypair_ops;
+		break;
+	default:
+		return TEE_ERROR_NOT_IMPLEMENTED;
+	}
+
+	s->d = crypto_bignum_allocate(key_size_bits);
+	if (!s->d)
+		goto err;
+	s->x = crypto_bignum_allocate(key_size_bits);
+	if (!s->x)
+		goto err;
+	s->y = crypto_bignum_allocate(key_size_bits);
+	if (!s->y)
+		goto err;
+
+	return TEE_SUCCESS;
+
+err:
+	crypto_bignum_free(&s->d);
+	crypto_bignum_free(&s->x);
+
+	return TEE_ERROR_OUT_OF_MEMORY;
+}
+
+static const struct crypto_ecc_public_ops ecc_public_key_ops = {
+	.free = ecc_free_public_key,
+	.verify = ecc_verify,
+};
+
+static const struct crypto_ecc_public_ops sm2_pke_public_key_ops = {
+	.free = ecc_free_public_key,
+	.encrypt = sm2_mbedtls_pke_encrypt,
+};
+
+static const struct crypto_ecc_public_ops sm2_kep_public_key_ops = {
+	.free = ecc_free_public_key,
+};
+
+static const struct crypto_ecc_public_ops sm2_dsa_public_key_ops = {
+	.free = ecc_free_public_key,
+	.verify = sm2_mbedtls_dsa_verify,
+};
+
+const struct crypto_ecc_public_ops*
+crypto_asym_get_ecc_public_ops(uint32_t key_type)
+{
+	switch (key_type) {
+	case TEE_TYPE_ECDSA_PUBLIC_KEY:
+	case TEE_TYPE_ECDH_PUBLIC_KEY:
+		return &ecc_public_key_ops;
+	case TEE_TYPE_SM2_DSA_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_DSA))
+			return NULL;
+
+		return &sm2_dsa_public_key_ops;
+	case TEE_TYPE_SM2_PKE_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_PKE))
+			return NULL;
+
+		return &sm2_pke_public_key_ops;
+	case TEE_TYPE_SM2_KEP_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_KEP))
+			return NULL;
+		return &sm2_kep_public_key_ops;
+	default:
+		return NULL;
+	}
+}
+
+TEE_Result crypto_asym_alloc_ecc_public_key(struct ecc_public_key *s,
+					    uint32_t key_type,
+					    size_t key_size_bits)
+{
+	memset(s, 0, sizeof(*s));
+
+	switch (key_type) {
+	case TEE_TYPE_ECDSA_PUBLIC_KEY:
+	case TEE_TYPE_ECDH_PUBLIC_KEY:
+		s->ops = &ecc_public_key_ops;
+		break;
+	case TEE_TYPE_SM2_DSA_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_DSA))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_dsa_public_key_ops;
+		break;
+	case TEE_TYPE_SM2_PKE_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_PKE))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_pke_public_key_ops;
+		break;
+	case TEE_TYPE_SM2_KEP_PUBLIC_KEY:
+		if (!IS_ENABLED(CFG_CRYPTO_SM2_KEP))
+			return TEE_ERROR_NOT_IMPLEMENTED;
+
+		s->curve = TEE_ECC_CURVE_SM2;
+		s->ops = &sm2_kep_public_key_ops;
+		break;
+	default:
+		return TEE_ERROR_NOT_IMPLEMENTED;
+	}
+
+	s->x = crypto_bignum_allocate(key_size_bits);
+	if (!s->x)
+		goto err;
+	s->y = crypto_bignum_allocate(key_size_bits);
+	if (!s->y)
+		goto err;
+
+	return TEE_SUCCESS;
+
+err:
+	crypto_bignum_free(&s->x);
+
+	return TEE_ERROR_OUT_OF_MEMORY;
 }

@@ -94,7 +94,7 @@ size_t crypto_bignum_num_bytes(struct bignum *a);
 size_t crypto_bignum_num_bits(struct bignum *a);
 void crypto_bignum_bn2bin(const struct bignum *from, uint8_t *to);
 void crypto_bignum_copy(struct bignum *to, const struct bignum *from);
-void crypto_bignum_free(struct bignum *a);
+void crypto_bignum_free(struct bignum **a);
 void crypto_bignum_clear(struct bignum *a);
 
 /* return -1 if a<b, 0 if a==b, +1 if a>b */
@@ -160,6 +160,23 @@ struct ecc_keypair {
 	struct bignum *x;	/* Public value x */
 	struct bignum *y;	/* Public value y */
 	uint32_t curve;	        /* Curve type */
+	const struct crypto_ecc_keypair_ops *ops; /* Key Operations */
+};
+
+struct x25519_keypair {
+	uint8_t *priv;	/* Private value */
+	uint8_t *pub;	/* Public value */
+};
+
+struct ed25519_keypair {
+	uint8_t *priv;
+	uint8_t *pub;
+	uint32_t curve;
+};
+
+struct ed25519_public_key {
+	uint8_t *pub;
+	uint32_t curve;
 };
 
 /*
@@ -183,6 +200,13 @@ TEE_Result crypto_acipher_alloc_ecc_public_key(struct ecc_public_key *s,
 TEE_Result crypto_acipher_alloc_ecc_keypair(struct ecc_keypair *s,
 				size_t key_size_bits);
 void crypto_acipher_free_ecc_public_key(struct ecc_public_key *s);
+TEE_Result crypto_acipher_alloc_x25519_keypair(struct x25519_keypair *s,
+					       size_t key_size_bits);
+TEE_Result crypto_acipher_alloc_ed25519_keypair(struct ed25519_keypair *s,
+						size_t key_size_bits);
+TEE_Result
+crypto_acipher_alloc_ed25519_public_key(struct ed25519_public_key *key,
+					size_t key_size);
 
 /*
  * Key generation functions
@@ -190,8 +214,28 @@ void crypto_acipher_free_ecc_public_key(struct ecc_public_key *s);
 TEE_Result crypto_acipher_gen_rsa_key(struct rsa_keypair *key, size_t key_size);
 TEE_Result crypto_acipher_gen_dsa_key(struct dsa_keypair *key, size_t key_size);
 TEE_Result crypto_acipher_gen_dh_key(struct dh_keypair *key, struct bignum *q,
-				     size_t xbits);
-TEE_Result crypto_acipher_gen_ecc_key(struct ecc_keypair *key);
+				     size_t xbits, size_t key_size);
+TEE_Result crypto_acipher_gen_ecc_key(struct ecc_keypair *key, size_t key_size);
+TEE_Result crypto_acipher_gen_x25519_key(struct x25519_keypair *key,
+					 size_t key_size);
+TEE_Result crypto_acipher_gen_ed25519_key(struct ed25519_keypair *key,
+					  size_t key_size);
+TEE_Result crypto_acipher_ed25519_sign(struct ed25519_keypair *key,
+				       const uint8_t *msg, size_t msg_len,
+				       uint8_t *sig, size_t *sig_len);
+TEE_Result crypto_acipher_ed25519ctx_sign(struct ed25519_keypair *key,
+					  const uint8_t *msg, size_t msg_len,
+					  uint8_t *sig, size_t *sig_len,
+					  bool ph_flag,
+					  const uint8_t *ctx, size_t ctxlen);
+TEE_Result crypto_acipher_ed25519_verify(struct ed25519_public_key *key,
+					 const uint8_t *msg, size_t msg_len,
+					 const uint8_t *sig, size_t sig_len);
+TEE_Result crypto_acipher_ed25519ctx_verify(struct ed25519_public_key *key,
+					    const uint8_t *msg, size_t msg_len,
+					    const uint8_t *sig, size_t sig_len,
+					    bool ph_flag,
+					    const uint8_t *ctx, size_t ctxlen);
 
 TEE_Result crypto_acipher_dh_shared_secret(struct dh_keypair *private_key,
 					   struct bignum *public_key,

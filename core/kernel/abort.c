@@ -14,6 +14,7 @@
 #include <kernel/thread_private.h>
 #include <kernel/unwind.h>
 #include <kernel/user_mode_ctx.h>
+#include <memtag.h>
 #include <mm/core_mmu.h>
 #include <mm/mobj.h>
 #include <mm/tee_pager.h>
@@ -159,9 +160,16 @@ __print_abort_info(struct abort_info *ai __maybe_unused,
 #endif /*ARM64*/
 
 	EMSG_RAW("");
-	EMSG_RAW("%s %s-abort at address 0x%" PRIxVA "%s",
-		ctx, abort_type_to_str(ai->abort_type), ai->va,
-		fault_to_str(ai->abort_type, ai->fault_descr));
+	if (IS_ENABLED(CFG_MEMTAG))
+		EMSG_RAW("%s %s-abort at address 0x%" PRIxVA
+			 " [tagged 0x%" PRIxVA "]%s", ctx,
+			 abort_type_to_str(ai->abort_type),
+			 memtag_strip_tag_vaddr((void *)ai->va), ai->va,
+			 fault_to_str(ai->abort_type, ai->fault_descr));
+	else
+		EMSG_RAW("%s %s-abort at address 0x%" PRIxVA "%s", ctx,
+			 abort_type_to_str(ai->abort_type), ai->va,
+			 fault_to_str(ai->abort_type, ai->fault_descr));
 #ifdef ARM32
 	EMSG_RAW(" fsr 0x%08x  ttbr0 0x%08x  ttbr1 0x%08x  cidr 0x%X",
 		 ai->fault_descr, read_ttbr0(), read_ttbr1(),

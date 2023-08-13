@@ -18,6 +18,29 @@ TEE_Result job_status_to_tee_result(uint32_t status)
 		if (JRSTA_CCB_GET_ERR(status) == JRSTA_DECO_ERRID_FORMAT)
 			return TEE_ERROR_BAD_PARAMETERS;
 		break;
+	}
+
+	return TEE_ERROR_GENERIC;
+}
+
+TEE_Result caam_status_to_tee_result(enum caam_status status)
+{
+	switch (status) {
+	case CAAM_NO_ERROR:
+		return TEE_SUCCESS;
+
+	case CAAM_OUT_MEMORY:
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+	case CAAM_BAD_PARAM:
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	case CAAM_SHORT_BUFFER:
+		return TEE_ERROR_SHORT_BUFFER;
+
+	case CAAM_NOT_SUPPORTED:
+		return TEE_ERROR_NOT_SUPPORTED;
+
 	default:
 		break;
 	}

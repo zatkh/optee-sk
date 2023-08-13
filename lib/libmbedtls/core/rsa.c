@@ -14,6 +14,7 @@
 #include <string.h>
 #include <tee/tee_cryp_utl.h>
 #include <utee_defines.h>
+#include <fault_mitigation.h>
 
 #include "mbd_rand.h"
 
@@ -47,6 +48,8 @@ static uint32_t tee_algo_to_mbedtls_hash_algo(uint32_t algo)
 #endif
 #if defined(CFG_CRYPTO_MD5)
 	case TEE_ALG_RSASSA_PKCS1_V1_5_MD5:
+	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_MD5:
+	case TEE_ALG_RSAES_PKCS1_OAEP_MGF1_MD5:
 	case TEE_ALG_MD5:
 	case TEE_ALG_HMAC_MD5:
 		return MBEDTLS_MD_MD5;
@@ -178,7 +181,7 @@ TEE_Result crypto_acipher_alloc_rsa_public_key(struct rsa_public_key *s,
 		goto err;
 	return TEE_SUCCESS;
 err:
-	crypto_bignum_free(s->e);
+	crypto_bignum_free(&s->e);
 	return TEE_ERROR_OUT_OF_MEMORY;
 }
 
@@ -186,11 +189,33 @@ void crypto_acipher_free_rsa_public_key(struct rsa_public_key *s)
 {
 	if (!s)
 		return;
-	crypto_bignum_free(s->n);
-	crypto_bignum_free(s->e);
+	crypto_bignum_free(&s->n);
+	crypto_bignum_free(&s->e);
 }
 
-TEE_Result crypto_acipher_gen_rsa_key(struct rsa_keypair *key, size_t key_size)
+void crypto_acipher_free_rsa_keypair(struct rsa_keypair *s)
+__weak __alias("sw_crypto_acipher_free_rsa_keypair");
+
+void sw_crypto_acipher_free_rsa_keypair(struct rsa_keypair *s)
+{
+	if (!s)
+		return;
+	crypto_bignum_free(&s->e);
+	crypto_bignum_free(&s->d);
+	crypto_bignum_free(&s->n);
+	crypto_bignum_free(&s->p);
+	crypto_bignum_free(&s->q);
+	crypto_bignum_free(&s->qp);
+	crypto_bignum_free(&s->dp);
+	crypto_bignum_free(&s->dq);
+}
+
+TEE_Result crypto_acipher_gen_rsa_key(struct rsa_keypair *key,
+				      size_t key_size)
+__weak __alias("sw_crypto_acipher_gen_rsa_key");
+
+TEE_Result sw_crypto_acipher_gen_rsa_key(struct rsa_keypair *key,
+					 size_t key_size)
 {
 	TEE_Result res = TEE_SUCCESS;
 	mbedtls_rsa_context rsa;
@@ -523,6 +548,7 @@ TEE_Result crypto_acipher_rsassa_sign(uint32_t algo, struct rsa_keypair *key,
 	case TEE_ALG_RSASSA_PKCS1_V1_5_SHA512:
 		lmd_padding = MBEDTLS_RSA_PKCS_V15;
 		break;
+	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_MD5:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA1:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA224:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA256:
@@ -599,6 +625,14 @@ TEE_Result crypto_acipher_rsassa_verify(uint32_t algo,
 	mbedtls_rsa_context rsa;
 	const mbedtls_pk_info_t *pk_info = NULL;
 	uint32_t md_algo = 0;
+	struct ftmn ftmn = { };
+	unsigned long arg_hash = 0;
+
+	/*
+	 * The caller expects to call crypto_acipher_rsassa_verify(),
+	 * update the hash as needed.
+	 */
+	FTMN_CALLEE_SWAP_HASH(FTMN_FUNC_HASH("crypto_acipher_rsassa_verify"));
 
 	memset(&rsa, 0, sizeof(rsa));
 	mbedtls_rsa_init(&rsa, 0, 0);
@@ -631,13 +665,16 @@ TEE_Result crypto_acipher_rsassa_verify(uint32_t algo,
 	case TEE_ALG_RSASSA_PKCS1_V1_5_SHA256:
 	case TEE_ALG_RSASSA_PKCS1_V1_5_SHA384:
 	case TEE_ALG_RSASSA_PKCS1_V1_5_SHA512:
+		arg_hash = FTMN_FUNC_HASH("mbedtls_rsa_rsassa_pkcs1_v15_verify");
 		lmd_padding = MBEDTLS_RSA_PKCS_V15;
 		break;
+	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_MD5:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA1:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA224:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA256:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA384:
 	case TEE_ALG_RSASSA_PKCS1_PSS_MGF1_SHA512:
+		arg_hash = FTMN_FUNC_HASH("mbedtls_rsa_rsassa_pss_verify_ext");
 		lmd_padding = MBEDTLS_RSA_PKCS_V21;
 		break;
 	default:
@@ -659,15 +696,24 @@ TEE_Result crypto_acipher_rsassa_verify(uint32_t algo,
 
 	mbedtls_rsa_set_padding(&rsa, lmd_padding, md_algo);
 
+	FTMN_PUSH_LINKED_CALL(&ftmn, arg_hash);
 	lmd_res = pk_info->verify_func(&rsa, md_algo, msg, msg_len,
 				       sig, sig_len);
+	if (!lmd_res)
+		FTMN_SET_CHECK_RES_FROM_CALL(&ftmn, FTMN_INCR0, lmd_res);
+	FTMN_POP_LINKED_CALL(&ftmn);
 	if (lmd_res != 0) {
 		FMSG("verify_func failed, returned 0x%x", -lmd_res);
 		res = TEE_ERROR_SIGNATURE_INVALID;
 		goto err;
 	}
 	res = TEE_SUCCESS;
+	goto out;
+
 err:
+	FTMN_SET_CHECK_RES_NOT_ZERO(&ftmn, FTMN_INCR0, res);
+out:
+	FTMN_CALLEE_DONE_CHECK(&ftmn, FTMN_INCR0, FTMN_STEP_COUNT(1), res);
 	/* Reset mpi to skip freeing here, those mpis will be freed with key */
 	mbedtls_mpi_init(&rsa.E);
 	mbedtls_mpi_init(&rsa.N);

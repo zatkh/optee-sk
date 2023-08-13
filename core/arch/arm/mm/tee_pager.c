@@ -234,11 +234,11 @@ void *tee_pager_phys_to_virt(paddr_t pa)
 		return (void *)core_mmu_idx2va(&ti, idx);
 
 	n = 0;
-	idx = core_mmu_va2idx(&pager_tables[n].tbl_info, TEE_RAM_VA_START);
+	idx = core_mmu_va2idx(&pager_tables[n].tbl_info, TEE_RAM_START);
 	while (true) {
 		while (idx < TBL_NUM_ENTRIES) {
 			v = core_mmu_idx2va(&pager_tables[n].tbl_info, idx);
-			if (v >= (TEE_RAM_VA_START + TEE_RAM_VA_SIZE))
+			if (v >= (TEE_RAM_START + TEE_RAM_VA_SIZE))
 				return NULL;
 
 			core_mmu_get_entry(&pager_tables[n].tbl_info,
@@ -373,7 +373,7 @@ void tee_pager_set_alias_area(tee_mm_entry_t *mm)
 	}
 
 out:
-	tlbi_mva_range(smem, nbytes, SMALL_PAGE_SIZE);
+	tlbi_va_range(smem, nbytes, SMALL_PAGE_SIZE);
 }
 
 static size_t tbl_usage_count(struct core_mmu_table_info *ti)
@@ -425,11 +425,36 @@ static void area_tlbi_entry(struct tee_pager_area *area, size_t idx)
 	if (area->pgt->ctx) {
 		uint32_t asid = to_user_mode_ctx(area->pgt->ctx)->vm_info.asid;
 
-		tlbi_mva_asid(va, asid);
+		tlbi_va_asid(va, asid);
 		return;
 	}
 #endif
 	tlbi_mva_allasid(va);
+}
+
+static void pmem_assign_fobj_page(struct tee_pager_pmem *pmem,
+				  struct vm_paged_region *reg, vaddr_t va)
+{
+	struct tee_pager_pmem *p = NULL;
+	unsigned int fobj_pgidx = 0;
+
+	assert(!pmem->fobj && pmem->fobj_pgidx == INVALID_PGIDX);
+
+	assert(va >= reg->base && va < (reg->base + reg->size));
+	fobj_pgidx = (va - reg->base) / SMALL_PAGE_SIZE + reg->fobj_pgoffs;
+
+	TAILQ_FOREACH(p, &tee_pager_pmem_head, link)
+		assert(p->fobj != reg->fobj || p->fobj_pgidx != fobj_pgidx);
+
+	pmem->fobj = reg->fobj;
+	pmem->fobj_pgidx = fobj_pgidx;
+}
+
+static void pmem_clear(struct tee_pager_pmem *pmem)
+{
+	pmem->fobj = NULL;
+	pmem->fobj_pgidx = INVALID_PGIDX;
+	pmem->flags = 0;
 }
 
 static void pmem_unmap(struct tee_pager_pmem *pmem, struct pgt *only_this_pgt)
@@ -1289,11 +1314,201 @@ static struct tee_pager_pmem *tee_pager_get_page(enum tee_pager_area_type at)
 {
 	struct tee_pager_pmem *pmem;
 
-	pmem = TAILQ_FIRST(&tee_pager_pmem_head);
-	if (!pmem) {
-		EMSG("No pmem entries");
-		return NULL;
+	/* Ensure we are allowed to write to aliased virtual page */
+	ti = find_table_info((vaddr_t)va_alias);
+	idx_alias = core_mmu_va2idx(ti, (vaddr_t)va_alias);
+	core_mmu_get_entry(ti, idx_alias, &pa_alias, &attr_alias);
+	if (!(attr_alias & TEE_MATTR_PW)) {
+		attr_alias |= TEE_MATTR_PW;
+		core_mmu_set_entry(ti, idx_alias, pa_alias, attr_alias);
+		tlbi_va_allasid((vaddr_t)va_alias);
 	}
+
+	asan_tag_access(va_alias, va_alias + SMALL_PAGE_SIZE);
+	if (fobj_load_page(pmem->fobj, pmem->fobj_pgidx, va_alias)) {
+		EMSG("PH 0x%" PRIxVA " failed", page_va);
+		panic();
+	}
+	switch (reg->type) {
+	case PAGED_REGION_TYPE_RO:
+		TAILQ_INSERT_TAIL(&tee_pager_pmem_head, pmem, link);
+		incr_ro_hits();
+		/* Forbid write to aliases for read-only (maybe exec) pages */
+		attr_alias &= ~TEE_MATTR_PW;
+		core_mmu_set_entry(ti, idx_alias, pa_alias, attr_alias);
+		tlbi_va_allasid((vaddr_t)va_alias);
+		break;
+	case PAGED_REGION_TYPE_RW:
+		TAILQ_INSERT_TAIL(&tee_pager_pmem_head, pmem, link);
+		if (writable && (attr & (TEE_MATTR_PW | TEE_MATTR_UW)))
+			pmem->flags |= PMEM_FLAG_DIRTY;
+		incr_rw_hits();
+		break;
+	case PAGED_REGION_TYPE_LOCK:
+		/* Move page to lock list */
+		if (tee_pager_npages <= 0)
+			panic("Running out of pages");
+		tee_pager_npages--;
+		set_npages();
+		TAILQ_INSERT_TAIL(&tee_pager_lock_pmem_head, pmem, link);
+		break;
+	default:
+		panic();
+	}
+	asan_tag_no_access(va_alias, va_alias + SMALL_PAGE_SIZE);
+
+	if (!writable)
+		attr &= ~(TEE_MATTR_PW | TEE_MATTR_UW);
+
+	/*
+	 * We've updated the page using the aliased mapping and
+	 * some cache maintenance is now needed if it's an
+	 * executable page.
+	 *
+	 * Since the d-cache is a Physically-indexed,
+	 * physically-tagged (PIPT) cache we can clean either the
+	 * aliased address or the real virtual address. In this
+	 * case we choose the real virtual address.
+	 *
+	 * The i-cache can also be PIPT, but may be something else
+	 * too like VIPT. The current code requires the caches to
+	 * implement the IVIPT extension, that is:
+	 * "instruction cache maintenance is required only after
+	 * writing new data to a physical address that holds an
+	 * instruction."
+	 *
+	 * To portably invalidate the icache the page has to
+	 * be mapped at the final virtual address but not
+	 * executable.
+	 */
+	if (reg->flags & (TEE_MATTR_PX | TEE_MATTR_UX)) {
+		uint32_t mask = TEE_MATTR_PX | TEE_MATTR_UX |
+				TEE_MATTR_PW | TEE_MATTR_UW;
+		void *va = (void *)page_va;
+
+		/* Set a temporary read-only mapping */
+		tblidx_set_entry(tblidx, pa, attr & ~mask);
+		tblidx_tlbi_entry(tblidx);
+
+		dcache_clean_range_pou(va, SMALL_PAGE_SIZE);
+		if (clean_user_cache)
+			icache_inv_user_range(va, SMALL_PAGE_SIZE);
+		else
+			icache_inv_range(va, SMALL_PAGE_SIZE);
+
+		/* Set the final mapping */
+		tblidx_set_entry(tblidx, pa, attr);
+		tblidx_tlbi_entry(tblidx);
+	} else {
+		tblidx_set_entry(tblidx, pa, attr);
+		/*
+		 * No need to flush TLB for this entry, it was
+		 * invalid. We should use a barrier though, to make
+		 * sure that the change is visible.
+		 */
+		dsb_ishst();
+	}
+	pgt_inc_used_entries(tblidx.pgt);
+
+	FMSG("Mapped 0x%" PRIxVA " -> 0x%" PRIxPA, page_va, pa);
+}
+
+static void make_dirty_page(struct tee_pager_pmem *pmem,
+			    struct vm_paged_region *reg, struct tblidx tblidx,
+			    paddr_t pa)
+{
+	assert(reg->flags & (TEE_MATTR_UW | TEE_MATTR_PW));
+	assert(!(pmem->flags & PMEM_FLAG_DIRTY));
+
+	FMSG("Dirty %#"PRIxVA, tblidx2va(tblidx));
+	pmem->flags |= PMEM_FLAG_DIRTY;
+	tblidx_set_entry(tblidx, pa, get_region_mattr(reg->flags));
+	tblidx_tlbi_entry(tblidx);
+}
+
+/*
+ * This function takes a reference to a page (@fobj + fobj_pgidx) and makes
+ * the corresponding IV available.
+ *
+ * In case the page needs to be saved the IV must be writable, consequently
+ * is the page holding the IV made dirty. If the page instead only is to
+ * be verified it's enough that the page holding the IV is readonly and
+ * thus doesn't have to be made dirty too.
+ *
+ * This function depends on pager_spare_pmem pointing to a free pmem when
+ * entered. In case the page holding the needed IV isn't mapped this spare
+ * pmem is used to map the page. If this function has used pager_spare_pmem
+ * and assigned it to NULL it must be reassigned with a new free pmem
+ * before this function can be called again.
+ */
+static void make_iv_available(struct fobj *fobj, unsigned int fobj_pgidx,
+			      bool writable)
+{
+	struct vm_paged_region *reg = pager_iv_region;
+	struct tee_pager_pmem *pmem = NULL;
+	struct tblidx tblidx = { };
+	vaddr_t page_va = 0;
+	uint32_t attr = 0;
+	paddr_t pa = 0;
+
+	page_va = fobj_get_iv_vaddr(fobj, fobj_pgidx) & ~SMALL_PAGE_MASK;
+	if (!IS_ENABLED(CFG_CORE_PAGE_TAG_AND_IV) || !page_va) {
+		assert(!page_va);
+		return;
+	}
+
+	assert(reg && reg->type == PAGED_REGION_TYPE_RW);
+	assert(pager_spare_pmem);
+	assert(core_is_buffer_inside(page_va, 1, reg->base, reg->size));
+
+	tblidx = region_va2tblidx(reg, page_va);
+	/*
+	 * We don't care if tee_pager_unhide_page() succeeds or not, we're
+	 * still checking the attributes afterwards.
+	 */
+	tee_pager_unhide_page(reg, page_va);
+	tblidx_get_entry(tblidx, &pa, &attr);
+	if (!(attr & TEE_MATTR_VALID_BLOCK)) {
+		/*
+		 * We're using the spare pmem to map the IV corresponding
+		 * to another page.
+		 */
+		pmem = pager_spare_pmem;
+		pager_spare_pmem = NULL;
+		pmem_assign_fobj_page(pmem, reg, page_va);
+
+		if (writable)
+			pmem->flags |= PMEM_FLAG_DIRTY;
+
+		pager_deploy_page(pmem, reg, page_va,
+				  false /*!clean_user_cache*/, writable);
+	} else if (writable && !(attr & TEE_MATTR_PW)) {
+		pmem = pmem_find(reg, page_va);
+		/* Note that pa is valid since TEE_MATTR_VALID_BLOCK is set */
+		make_dirty_page(pmem, reg, tblidx, pa);
+	}
+}
+
+static void pager_get_page(struct vm_paged_region *reg, struct abort_info *ai,
+			   bool clean_user_cache)
+{
+	vaddr_t page_va = ai->va & ~SMALL_PAGE_MASK;
+	struct tblidx tblidx = region_va2tblidx(reg, page_va);
+	struct tee_pager_pmem *pmem = NULL;
+	bool writable = false;
+	uint32_t attr = 0;
+
+	/*
+	 * Get a pmem to load code and data into, also make sure
+	 * the corresponding IV page is available.
+	 */
+	while (true) {
+		pmem = TAILQ_FIRST(&tee_pager_pmem_head);
+		if (!pmem) {
+			EMSG("No pmem entries");
+			abort_print(ai);
+			panic();
+		}
 
 	if (pmem->fobj) {
 		pmem_unmap(pmem, NULL);
@@ -1735,7 +1950,7 @@ void tee_pager_release_phys(void *addr, size_t size)
 	}
 
 	if (unmaped)
-		tlbi_mva_range(begin, end - begin, SMALL_PAGE_SIZE);
+		tlbi_va_range(begin, end - begin, SMALL_PAGE_SIZE);
 
 	pager_unlock(exceptions);
 }

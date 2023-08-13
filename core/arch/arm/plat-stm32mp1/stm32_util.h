@@ -7,9 +7,12 @@
 #define __STM32_UTIL_H__
 
 #include <assert.h>
+#include <drivers/clk.h>
+#include <drivers/pinctrl.h>
 #include <drivers/stm32_bsec.h>
 #include <kernel/panic.h>
 #include <stdint.h>
+#include <tee_api_types.h>
 #include <types_ext.h>
 
 /* Backup registers and RAM utils */
@@ -32,9 +35,10 @@ vaddr_t get_gicd_base(void);
  * check DT configuration matches platform implementation of the banks
  * description.
  */
-vaddr_t stm32_get_gpio_bank_base(unsigned int bank);
 unsigned int stm32_get_gpio_bank_offset(unsigned int bank);
-unsigned int stm32_get_gpio_bank_clock(unsigned int bank);
+
+/* Platform util for PMIC support */
+bool stm32mp_with_pmic(void);
 
 /* Power management service */
 #ifdef CFG_PSCI_ARM32
@@ -86,29 +90,6 @@ struct stm32_bsec_static_cfg {
 };
 
 void stm32mp_get_bsec_static_cfg(struct stm32_bsec_static_cfg *cfg);
-
-/*
- * Return true if platform is in closed_device mode
- */
-bool stm32mp_is_closed_device(void);
-
-/*
- * Shared registers support: common lock for accessing SoC registers
- * shared between several drivers.
- */
-void io_mask32_stm32shregs(vaddr_t va, uint32_t value, uint32_t mask);
-
-static inline void io_setbits32_stm32shregs(vaddr_t va, uint32_t value)
-{
-	io_mask32_stm32shregs(va, value, value);
-}
-
-static inline void io_clrbits32_stm32shregs(vaddr_t va, uint32_t value)
-{
-	io_mask32_stm32shregs(va, 0, value);
-}
-
-void io_clrsetbits32_stm32shregs(vaddr_t va, uint32_t clr, uint32_t set);
 
 /*
  * Shared reference counter: increments by 2 on secure increment
@@ -219,9 +200,12 @@ enum stm32mp_shres {
 	STM32MP1_SHRES_PLL2_Q,
 	STM32MP1_SHRES_PLL2_R,
 	STM32MP1_SHRES_PLL3,
-	STM32MP1_SHRES_PLL3_P,
-	STM32MP1_SHRES_PLL3_Q,
-	STM32MP1_SHRES_PLL3_R,
+	STM32MP1_SHRES_MDMA,
+	STM32MP1_SHRES_SRAM1,
+	STM32MP1_SHRES_SRAM2,
+	STM32MP1_SHRES_SRAM3,
+	STM32MP1_SHRES_SRAM4,
+
 	STM32MP1_SHRES_COUNT
 };
 
@@ -257,14 +241,25 @@ void stm32mp_register_secure_gpio(unsigned int bank, unsigned int pin);
  */
 void stm32mp_register_non_secure_gpio(unsigned int bank, unsigned int pin);
 
+/*
+ * Register pin resource of a pin control state as a secure peripheral
+ * @bank: Bank of the target GPIO
+ * @pin: Bit position of the target GPIO in the bank
+ */
+void stm32mp_register_secure_pinctrl(struct pinctrl_state *pinctrl);
+
+/*
+ * Register pin resource of a pin control state as a non-secure peripheral
+ * @bank: Bank of the target GPIO
+ * @pin: Bit position of the target GPIO in the bank
+ */
+void stm32mp_register_non_secure_pinctrl(struct pinctrl_state *pinctrl);
+
 /* Return true if and only if resource @id is registered as secure */
 bool stm32mp_periph_is_secure(enum stm32mp_shres id);
 
 /* Return true if and only if GPIO bank @bank is registered as secure */
 bool stm32mp_gpio_bank_is_secure(unsigned int bank);
-
-/* Return true if and only if GPIO bank @bank is registered as shared */
-bool stm32mp_gpio_bank_is_shared(unsigned int bank);
 
 /* Return true if and only if GPIO bank @bank is registered as non-secure */
 bool stm32mp_gpio_bank_is_non_secure(unsigned int bank);
@@ -281,4 +276,66 @@ bool stm32mp_clock_is_non_secure(unsigned long clock_id);
 /* Register parent clocks of @clock (ID used in clock DT bindings) as secure */
 void stm32mp_register_clock_parents_secure(unsigned long clock_id);
 
+#else /* CFG_STM32MP1_SHARED_RESOURCES */
+
+static inline void stm32mp_register_secure_periph(enum stm32mp_shres id
+						  __unused)
+{
+}
+
+static inline void stm32mp_register_non_secure_periph(enum stm32mp_shres id
+						      __unused)
+{
+}
+
+static inline void stm32mp_register_secure_periph_iomem(vaddr_t base __unused)
+{
+}
+
+static inline void stm32mp_register_non_secure_periph_iomem(vaddr_t base
+							    __unused)
+{
+}
+
+static inline void stm32mp_register_secure_gpio(unsigned int bank __unused,
+						unsigned int pin __unused)
+{
+}
+
+static inline void stm32mp_register_non_secure_gpio(unsigned int bank __unused,
+						    unsigned int pin __unused)
+{
+}
+
+static inline void
+stm32mp_register_secure_pinctrl(struct pinctrl_state *pinctrl __unused)
+{
+}
+
+static inline void
+stm32mp_register_non_secure_pinctrl(struct pinctrl_state *pinctrl __unused)
+{
+}
+
+static inline bool stm32mp_periph_is_secure(enum stm32mp_shres id __unused)
+{
+	return true;
+}
+
+static inline bool stm32mp_gpio_bank_is_secure(unsigned int bank __unused)
+{
+	return true;
+}
+
+static inline bool stm32mp_gpio_bank_is_non_secure(unsigned int bank __unused)
+{
+	return false;
+}
+
+static inline void stm32mp_register_clock_parents_secure(unsigned long clock_id
+							 __unused)
+{
+}
+
+#endif /* CFG_STM32MP1_SHARED_RESOURCES */
 #endif /*__STM32_UTIL_H__*/

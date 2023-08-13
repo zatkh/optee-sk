@@ -3,12 +3,16 @@
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
 #include <compiler.h>
+#include <config.h>
+#include <malloc.h>
 #include <tee_ta_api.h>
 #include <tee_internal_api_extensions.h>
 #include <trace.h>
 #include <user_ta_header.h>
 #include <user_ta_header_defines.h>
 #include <utee_syscalls.h>
+
+extern void *__stack_chk_guard;
 
 int trace_level = TRACE_LEVEL;
 
@@ -45,7 +49,25 @@ void __noreturn _C_FUNCTION(__ta_entry)(unsigned long func,
 					struct utee_params *up,
 					unsigned long cmd_id)
 {
-	TEE_Result res = __utee_entry(func, session_id, up, cmd_id);
+	static bool stack_canary_inited;
+	TEE_Result res = TEE_ERROR_GENERIC;
+
+	if (IS_ENABLED(_CFG_TA_STACK_PROTECTOR) && !stack_canary_inited) {
+		uintptr_t canary = 0;
+
+		res = _utee_cryp_random_number_generate(&canary,
+							sizeof(canary));
+		if (res != TEE_SUCCESS)
+			_utee_return(res);
+
+		/* Leave null byte in canary to prevent string base exploit */
+		canary &= ~0xffUL;
+
+		__stack_chk_guard = (void *)canary;
+		stack_canary_inited = true;
+	}
+
+	res = __utee_entry(func, session_id, up, cmd_id);
 
 #if defined(CFG_FTRACE_SUPPORT)
 	/*
@@ -93,6 +115,17 @@ const struct ta_head ta_head __section(".ta_head") = {
 uint8_t ta_heap[TA_DATA_SIZE];
 const size_t ta_heap_size = sizeof(ta_heap);
 
+#ifndef TA_NO_SHARE_DATA_SIZE
+#define TA_NO_SHARE_DATA_SIZE	0
+#endif
+#if TA_NO_SHARE_DATA_SIZE && \
+	TA_NO_SHARE_DATA_SIZE < MALLOC_INITIAL_POOL_MIN_SIZE
+#error TA_NO_SHARE_DATA_SIZE too small
+#endif
+
+uint8_t __ta_no_share_heap[TA_NO_SHARE_DATA_SIZE];
+const size_t __ta_no_share_heap_size = sizeof(__ta_no_share_heap);
+
 const struct user_ta_property ta_props[] = {
 	{TA_PROP_STR_SINGLE_INSTANCE, USER_TA_PROP_TYPE_BOOL,
 	 &(const bool){(TA_FLAGS & TA_FLAG_SINGLE_INSTANCE) != 0}},
@@ -114,6 +147,13 @@ const struct user_ta_property ta_props[] = {
 
 	{TA_PROP_STR_DESCRIPTION, USER_TA_PROP_TYPE_STRING,
 	 TA_DESCRIPTION},
+
+	/* Only little-endian supported */
+	{TA_PROP_STR_ENDIAN, USER_TA_PROP_TYPE_U32, &(const uint32_t){0}},
+
+	{TA_PROP_STR_DOES_NOT_CLOSE_HANDLE_ON_CORRUPT_OBJECT,
+	 USER_TA_PROP_TYPE_BOOL,
+	 &(const bool){TA_FLAGS & TA_FLAG_DONT_CLOSE_HANDLE_ON_CORRUPT_OBJECT}},
 
 /*
  * Extended propietary properties, name of properties must not begin with
@@ -147,3 +187,24 @@ int tahead_get_trace_level(void)
 	 */
 	return TRACE_LEVEL;
 }
+
+#if __OPTEE_CORE_API_COMPAT_1_1
+#undef TA_OpenSessionEntryPoint
+#undef TA_InvokeCommandEntryPoint
+#undef TEE_Param
+TEE_Result TA_OpenSessionEntryPoint(uint32_t pt,
+				    TEE_Param params[TEE_NUM_PARAMS],
+				    void **sess_ctx)
+{
+	return __ta_open_sess(pt, params, sess_ctx,
+			      __GP11_TA_OpenSessionEntryPoint);
+}
+
+TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx, uint32_t cmd_id,
+				      uint32_t pt,
+				      TEE_Param params[TEE_NUM_PARAMS])
+{
+	return __ta_invoke_cmd(sess_ctx, cmd_id, pt, params,
+			       __GP11_TA_InvokeCommandEntryPoint);
+}
+#endif

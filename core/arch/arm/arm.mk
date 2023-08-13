@@ -72,6 +72,66 @@ ifeq ($(CFG_CORE_LARGE_PHYS_ADDR),y)
 $(call force,CFG_WITH_LPAE,y)
 endif
 
+# SPMC configuration "S-EL1 SPMC" where SPM Core is implemented at S-EL1,
+# that is, OP-TEE.
+ifeq ($(CFG_CORE_SEL1_SPMC),y)
+$(call force,CFG_CORE_FFA,y)
+$(call force,CFG_CORE_SEL2_SPMC,n)
+$(call force,CFG_CORE_EL3_SPMC,n)
+endif
+# SPMC configuration "S-EL2 SPMC" where SPM Core is implemented at S-EL2,
+# that is, the hypervisor sandboxing OP-TEE
+ifeq ($(CFG_CORE_SEL2_SPMC),y)
+$(call force,CFG_CORE_FFA,y)
+$(call force,CFG_CORE_SEL1_SPMC,n)
+$(call force,CFG_CORE_EL3_SPMC,n)
+CFG_CORE_HAFNIUM_INTC ?= y
+# Enable support in OP-TEE to relocate itself to allow it to run from a
+# physical address that differs from the link address
+CFG_CORE_PHYS_RELOCATABLE ?= y
+endif
+# SPMC configuration "EL3 SPMC" where SPM Core is implemented at EL3, that
+# is, in TF-A
+ifeq ($(CFG_CORE_EL3_SPMC),y)
+$(call force,CFG_CORE_FFA,y)
+$(call force,CFG_CORE_SEL2_SPMC,n)
+$(call force,CFG_CORE_SEL1_SPMC,n)
+endif
+
+ifeq ($(CFG_CORE_PHYS_RELOCATABLE)-$(CFG_WITH_PAGER),y-y)
+$(error CFG_CORE_PHYS_RELOCATABLE and CFG_WITH_PAGER are not compatible)
+endif
+ifeq ($(CFG_CORE_PHYS_RELOCATABLE),y)
+ifneq ($(CFG_CORE_SEL2_SPMC),y)
+$(error CFG_CORE_PHYS_RELOCATABLE depends on CFG_CORE_SEL2_SPMC)
+endif
+endif
+
+ifeq ($(CFG_CORE_FFA)-$(CFG_WITH_PAGER),y-y)
+$(error CFG_CORE_FFA and CFG_WITH_PAGER are not compatible)
+endif
+ifeq ($(CFG_GIC),y)
+ifeq ($(CFG_ARM_GICV3),y)
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,y)
+else
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,n)
+endif
+endif
+
+CFG_CORE_HAFNIUM_INTC ?= n
+ifeq ($(CFG_CORE_HAFNIUM_INTC),y)
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,y)
+endif
+
+# Selects if IRQ is used to signal native interrupt
+# if CFG_CORE_IRQ_IS_NATIVE_INTR == y:
+#   IRQ signals a native interrupt pending
+#   FIQ signals a foreign non-secure interrupt or a managed exit pending
+# else: (vice versa)
+#   IRQ signals a foreign non-secure interrupt or a managed exit pending
+#   FIQ signals a native interrupt pending
+CFG_CORE_IRQ_IS_NATIVE_INTR ?= n
+
 # Unmaps all kernel mode code except the code needed to take exceptions
 # from user space and restore kernel mode mapping again. This gives more
 # strict control over what is accessible while in user mode.
@@ -143,7 +203,7 @@ core-platform-cflags += $(platform-cflags-debug-info)
 core-platform-aflags += $(platform-aflags-generic)
 core-platform-aflags += $(platform-aflags-debug-info)
 
-ifeq ($(CFG_CORE_ASLR),y)
+ifeq ($(call cfg-one-enabled, CFG_CORE_ASLR CFG_CORE_PHYS_RELOCATABLE),y)
 core-platform-cflags += -fpie
 endif
 
