@@ -126,13 +126,21 @@ static TEE_Result imx_wdog_base(vaddr_t *wdog_vbase)
 	}
 
 	/* search the first usable wdog */
-	for (i = 0; i < ARRAY_SIZE(wdog_path); i++) {
-		off = fdt_path_offset(fdt, wdog_path[i]);
-		if (off < 0)
-			continue;
-
-		st = _fdt_get_status(fdt, off);
-		if (st & DT_STATUS_OK_SEC)
+	for (i = 0; i < ARRAY_SIZE(dt_wdog_match_table); i++) {
+		match = dt_wdog_match_table[i];
+		off = 0;
+		while (off >= 0) {
+			off = fdt_node_offset_by_compatible(fdt, off, match);
+			if (off > 0) {
+				st = fdt_get_status(fdt, off);
+				if (st & DT_STATUS_OK_SEC) {
+					DMSG("Wdog found at %u", off);
+					found_off = off;
+					break;
+				}
+			}
+		}
+		if (found_off)
 			break;
 	}
 

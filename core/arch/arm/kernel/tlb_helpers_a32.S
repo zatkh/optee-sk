@@ -19,16 +19,14 @@ UNWIND(	.fnstart)
 UNWIND(	.fnend)
 END_FUNC tlbi_all
 
-/* void tlbi_mva_allasid(vaddr_t mva); */
-FUNC tlbi_mva_allasid , :
-UNWIND(	.fnstart)
+/* void tlbi_va_allasid(vaddr_t va); */
+FUNC tlbi_va_allasid , :
 	dsb	ishst		/* Sync with table update */
 	write_tlbimvaais r0	/* Inval TLB by MVA all ASID Inner Sharable */
 	dsb	ish		/* Sync with tlb invalidation completion */
 	isb			/* Sync execution on tlb update */
 	bx	lr
-UNWIND(	.fnend)
-END_FUNC tlbi_mva_allasid
+END_FUNC tlbi_va_allasid
 
 /* void tlbi_asid(unsigned long asid); */
 FUNC tlbi_asid , :

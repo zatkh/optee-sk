@@ -91,9 +91,21 @@ TEE_Result TA_InvokeCommandEntryPoint(void *tee_session __unused, uint32_t cmd,
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	/* Param#1: none or input data buffer */
-	switch (TEE_PARAM_TYPE_GET(ptypes, 1)) {
-	case TEE_PARAM_TYPE_NONE:
+	DMSG("%s p#0 %zu@%p, p#1 %s %zu@%p, p#2 %s %zu@%p",
+	     id2str_ta_cmd(cmd),
+	     params[0].memref.size, params[0].memref.buffer,
+	     param_is_input(ptypes, 1) ? "in" :
+	     param_is_output(ptypes, 1) ? "out" : "---",
+	     param_is_memref(ptypes, 1) ? params[1].memref.size : 0,
+	     param_is_memref(ptypes, 1) ? params[1].memref.buffer : NULL,
+	     param_is_input(ptypes, 2) ? "in" :
+	     param_is_output(ptypes, 2) ? "out" : "---",
+	     param_is_memref(ptypes, 2) ? params[2].memref.size : 0,
+	     param_is_memref(ptypes, 2) ? params[2].memref.buffer : NULL);
+
+	switch (cmd) {
+	case PKCS11_CMD_PING:
+		rc = entry_ping(ptypes, params);
 		break;
 	case TEE_PARAM_TYPE_MEMREF_INPUT:
 		p1_in = &params[1];

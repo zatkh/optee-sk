@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
- * Copyright (c) 2015-2017 Linaro Limited
+ * Copyright (c) 2015-2022 Linaro Limited
+ * Copyright (c) 2020, Arm Limited.
  */
 
 #include <assert.h>
@@ -13,6 +14,8 @@
 #include <keep.h>
 #include <kernel/panic.h>
 #include <kernel/linker.h>
+#include <kernel/panic.h>
+#include <kernel/scall.h>
 #include <kernel/tee_misc.h>
 #include <kernel/tee_ta_manager.h>
 #include <kernel/thread.h>
@@ -36,7 +39,6 @@
 #include <stdlib.h>
 #include <sys/queue.h>
 #include <ta_pub_key.h>
-#include <tee/arch_svc.h>
 #include <tee/tee_cryp_utl.h>
 #include <tee/tee_obj.h>
 #include <tee/tee_svc_cryp.h>
@@ -58,12 +60,20 @@ const bool is_arm32 = true;
 const bool is_arm32;
 #endif
 
-static void init_utee_param(struct utee_params *up,
-			const struct tee_ta_param *p, void *va[TEE_NUM_PARAMS])
+static TEE_Result init_utee_param(struct utee_params *up,
+				  const struct tee_ta_param *p,
+				  void *va[TEE_NUM_PARAMS])
 {
-	size_t n;
+	TEE_Result res = TEE_SUCCESS;
+	size_t n = 0;
+	struct utee_params *up_bbuf = NULL;
 
-	up->types = p->types;
+	up_bbuf = bb_alloc(sizeof(struct utee_params));
+	if (!up_bbuf)
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+	up_bbuf->types = p->types;
+
 	for (n = 0; n < TEE_NUM_PARAMS; n++) {
 		uintptr_t a;
 		uintptr_t b;
@@ -86,33 +96,62 @@ static void init_utee_param(struct utee_params *up,
 			break;
 		}
 		/* See comment for struct utee_params in utee_types.h */
-		up->vals[n * 2] = a;
-		up->vals[n * 2 + 1] = b;
+		up_bbuf->vals[n * 2] = a;
+		up_bbuf->vals[n * 2 + 1] = b;
 	}
+
+	res = copy_to_user(up, up_bbuf, sizeof(struct utee_params));
+
+	bb_free(up_bbuf, sizeof(struct utee_params));
+
+	return res;
 }
 
 static void update_from_utee_param(struct tee_ta_param *p,
-			const struct utee_params *up)
+				   const struct utee_params *up)
 {
-	size_t n;
+	TEE_Result res = TEE_SUCCESS;
+	size_t n = 0;
+	struct utee_params *up_bbuf = NULL;
+	void *bbuf = NULL;
+
+	res = bb_memdup_user(up, sizeof(*up), &bbuf);
+	if (res)
+		return;
+
+	up_bbuf = bbuf;
 
 	for (n = 0; n < TEE_NUM_PARAMS; n++) {
 		switch (TEE_PARAM_TYPE_GET(p->types, n)) {
 		case TEE_PARAM_TYPE_MEMREF_OUTPUT:
 		case TEE_PARAM_TYPE_MEMREF_INOUT:
 			/* See comment for struct utee_params in utee_types.h */
-			p->u[n].mem.size = up->vals[n * 2 + 1];
+			p->u[n].mem.size = up_bbuf->vals[n * 2 + 1];
 			break;
 		case TEE_PARAM_TYPE_VALUE_OUTPUT:
 		case TEE_PARAM_TYPE_VALUE_INOUT:
 			/* See comment for struct utee_params in utee_types.h */
-			p->u[n].val.a = up->vals[n * 2];
-			p->u[n].val.b = up->vals[n * 2 + 1];
+			p->u[n].val.a = up_bbuf->vals[n * 2];
+			p->u[n].val.b = up_bbuf->vals[n * 2 + 1];
 			break;
 		default:
 			break;
 		}
 	}
+}
+
+static bool inc_recursion(void)
+{
+	struct thread_specific_data *tsd = thread_get_tsd();
+
+	if (tsd->syscall_recursion >= CFG_CORE_MAX_SYSCALL_RECURSION) {
+		DMSG("Maximum allowed recursion depth reached (%u)",
+		     CFG_CORE_MAX_SYSCALL_RECURSION);
+		return false;
+	}
+
+	tsd->syscall_recursion++;
+	return true;
 }
 
 static void clear_vfp_state(struct user_ta_ctx *utc __unused)
@@ -122,10 +161,16 @@ static void clear_vfp_state(struct user_ta_ctx *utc __unused)
 #endif
 }
 
-static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
-			struct tee_ta_session *session,
-			enum utee_entry_func func, uint32_t cmd,
-			struct tee_ta_param *param)
+static void dec_recursion(void)
+{
+	struct thread_specific_data *tsd = thread_get_tsd();
+
+	assert(tsd->syscall_recursion);
+	tsd->syscall_recursion--;
+}
+
+static TEE_Result user_ta_enter(struct ts_session *session,
+				enum utee_entry_func func, uint32_t cmd)
 {
 	TEE_Result res = TEE_SUCCESS;
 	struct utee_params *usr_params = NULL;
@@ -147,7 +192,13 @@ static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
 	usr_stack = utc->stack_ptr;
 	usr_stack -= ROUNDUP(sizeof(struct utee_params), STACK_ALIGNMENT);
 	usr_params = (struct utee_params *)usr_stack;
-	init_utee_param(usr_params, param, param_va);
+	if (ta_sess->param)
+		res = init_utee_param(usr_params, ta_sess->param, param_va);
+	else
+		res = clear_user(usr_params, sizeof(*usr_params));
+
+	if (res)
+		goto out_pop_session;
 
 	res = thread_enter_user_mode(func, tee_svc_kaddr_to_uref(session),
 				     (vaddr_t)usr_params, cmd, usr_stack,
@@ -170,18 +221,21 @@ static TEE_Result user_ta_enter(TEE_ErrorOrigin *err,
 		res = TEE_ERROR_TARGET_DEAD;
 	}
 
-	/* Copy out value results */
-	update_from_utee_param(param, usr_params);
+	if (ta_sess->param) {
+		/* Copy out value results */
+		update_from_utee_param(ta_sess->param, usr_params);
+	}
 
-	/*
-	 * Clear out the parameter mappings added with tee_mmu_map_param()
-	 * above.
-	 */
-	tee_mmu_clean_param(&utc->uctx);
-
-	s = tee_ta_pop_current_session();
-	assert(s == session);
-cleanup_return:
+out_pop_session:
+	if (ta_sess->param) {
+		/*
+		 * Clear out the parameter mappings added with
+		 * vm_clean_param() above.
+		 */
+		vm_clean_param(&utc->uctx);
+	}
+	ts_sess = ts_pop_current_session();
+	assert(ts_sess == session);
 
 	/*
 	 * Clear the cancel state now that the user TA has returned. The next
@@ -302,6 +356,13 @@ static void user_ta_enter_close_session(struct tee_ta_session *s)
 		user_ta_enter(&eo, s, UTEE_ENTRY_FUNC_CLOSE_SESSION, 0, &param);
 	}
 }
+
+#if defined(CFG_TA_STATS)
+static TEE_Result user_ta_enter_dump_memstats(struct ts_session *s)
+{
+	return user_ta_enter(s, UTEE_ENTRY_FUNC_DUMP_MEMSTATS, 0);
+}
+#endif
 
 static void dump_state_no_ldelf_dbg(struct user_ta_ctx *utc)
 {
@@ -595,6 +656,9 @@ static const struct tee_ta_ops user_ta_ops __rodata_unpaged = {
 	.enter_open_session = user_ta_enter_open_session,
 	.enter_invoke_cmd = user_ta_enter_invoke_cmd,
 	.enter_close_session = user_ta_enter_close_session,
+#if defined(CFG_TA_STATS)
+	.dump_mem_stats = user_ta_enter_dump_memstats,
+#endif
 	.dump_state = user_ta_dump_state,
 #ifdef CFG_FTRACE_SUPPORT
 	.dump_ftrace = user_ta_dump_ftrace,
@@ -602,7 +666,7 @@ static const struct tee_ta_ops user_ta_ops __rodata_unpaged = {
 	.destroy = user_ta_ctx_destroy,
 	.get_instance_id = user_ta_get_instance_id,
 #if defined(ARM32) || defined(ARM64)
-	.handle_svc = user_ta_handle_svc,
+	.handle_scall = scall_handle_user_ta,
 #elif defined(X64)
 	.handle_svc = NULL,
 #endif /*ARM32||ARM64*/
@@ -746,9 +810,16 @@ TEE_Result tee_ta_init_user_ta_session(const TEE_UUID *uuid,
 	if (res)
 		goto err;
 
-	utc->uctx.ctx.ref_count = 1;
-	condvar_init(&utc->uctx.ctx.busy_cv);
-	TAILQ_INSERT_TAIL(&tee_ctxes, &utc->uctx.ctx, link);
+	mutex_lock(&tee_ta_mutex);
+	s->ts_sess.ctx = &utc->ta_ctx.ts_ctx;
+	s->ts_sess.handle_scall = s->ts_sess.ctx->ops->handle_scall;
+	/*
+	 * Another thread trying to load this same TA may need to wait
+	 * until this context is fully initialized. This is needed to
+	 * handle single instance TAs.
+	 */
+	TAILQ_INSERT_TAIL(&tee_ctxes, &utc->ta_ctx, link);
+	mutex_unlock(&tee_ta_mutex);
 
 	tee_mmu_set_ctx(NULL);
 	return TEE_SUCCESS;

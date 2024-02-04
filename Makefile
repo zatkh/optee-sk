@@ -86,7 +86,7 @@ include core/core.mk
 
 # Platform/arch config is supposed to assign the targets
 ta-targets ?= invalid
-default-user-ta-target ?= $(firstword $(ta-targets))
+$(call force,default-user-ta-target,$(firstword $(ta-targets)))
 
 ifeq ($(CFG_WITH_USER_TA),y)
 include ldelf/ldelf.mk
@@ -97,11 +97,13 @@ endef
 $(foreach t, $(ta-targets), $(eval $(call build-ta-target, $(t))))
 
 # Build user TAs included in this git
+ifeq ($(CFG_BUILD_IN_TREE_TA),y)
 define build-user-ta
 ta-mk-file := $(1)
 include ta/mk/build-user-ta.mk
 endef
 $(foreach t, $(wildcard ta/*/user_ta.mk), $(eval $(call build-user-ta,$(t))))
+endif
 endif
 
 include mk/cleandirs.mk

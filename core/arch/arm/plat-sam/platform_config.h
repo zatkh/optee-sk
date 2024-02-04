@@ -38,7 +38,11 @@
 #error "LPAE not supported"
 #endif
 
+#if defined(PLATFORM_FLAVOR_sama5d27_wlsom1_ek)
+#define CONSOLE_UART_BASE     AT91C_BASE_UART0
+#else
 #define CONSOLE_UART_BASE     AT91C_BASE_UART1
+#endif
 
 /*
  * Everything is in DDR memory

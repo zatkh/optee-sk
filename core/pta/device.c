@@ -9,6 +9,7 @@
  */
 
 #include <kernel/pseudo_ta.h>
+#include <kernel/stmm_sp.h>
 #include <kernel/tee_ta_manager.h>
 #include <pta_device.h>
 #include <string.h>
@@ -53,7 +54,14 @@ static TEE_Result get_devices(uint32_t types,
 		}
 	}
 
-	params[0].memref.size = op_size;
+	if (stmm_get_uuid())
+		add_ta(TA_FLAG_DEVICE_ENUM_SUPP, stmm_get_uuid(), buf, blen,
+		       &pos, rflags);
+
+	if (IS_ENABLED(CFG_EARLY_TA))
+		for_each_early_ta(eta)
+			add_ta(eta->flags, &eta->uuid, buf, blen, &pos,
+			       rflags);
 
 	return res;
 }

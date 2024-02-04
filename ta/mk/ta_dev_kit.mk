@@ -51,6 +51,9 @@ cppflags$(sm)  := $($(sm)-platform-cppflags) $(CPPFLAGS_$(sm))
 aflags$(sm)    := $($(sm)-platform-aflags)
 cflags$(sm)    := $($(sm)-platform-cflags) $(CFLAGS_$(sm))
 
+ifeq ($(CFG_TA_OPTEE_CORE_API_COMPAT_1_1),y)
+cppflags$(sm)	+= -D__OPTEE_CORE_API_COMPAT_1_1=1
+endif
 CFG_TEE_TA_LOG_LEVEL ?= 2
 cppflags$(sm) += -DTRACE_LEVEL=$(CFG_TEE_TA_LOG_LEVEL)
 
@@ -112,10 +115,10 @@ endif
 
 ifneq ($(libname),)
 # Build target is static library
-all: $(libname).a
-cleanfiles += $(libname).a
+all: $(link-out-dir$(sm))/$(libname).a
+cleanfiles += $(link-out-dir$(sm))/$(libname).a
 
-$(libname).a: $(objs)
+$(link-out-dir$(sm))/$(libname).a: $(objs)
 	@echo '  AR      $@'
 	$(q)rm -f $@ && $(AR$(sm)) rcs -o $@ $^
 endif

@@ -44,5 +44,5 @@
 	/* Not reached */
 	END_FUNC utee_panic
 
-#include "utee_syscalls_asm.S"
+#include <utee_syscalls_asm.S>
 

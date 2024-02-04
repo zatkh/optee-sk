@@ -71,6 +71,7 @@
 #define UART1_BASE		0x09040000
 
 #define CONSOLE_UART_BASE	UART1_BASE
+#define IT_CONSOLE_UART		IT_UART1
 
 #else
 #error "Unknown platform flavor"

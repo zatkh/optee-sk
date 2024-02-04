@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2015, Linaro Limited
- * Copyright (c) 2019, Arm Limited. All rights reserved.
+ * Copyright (c) 2019-2023, Arm Limited. All rights reserved.
  */
 #ifndef ARM_H
 #define ARM_H
@@ -98,6 +98,65 @@
 
 #ifdef ARM64
 #include <arm64.h>
+#endif
+
+#ifndef __ASSEMBLER__
+static inline __noprof uint64_t barrier_read_counter_timer(void)
+{
+	isb();
+#ifdef CFG_CORE_SEL2_SPMC
+	return read_cntvct();
+#else
+	return read_cntpct();
+#endif
+}
+
+static inline bool feat_bti_is_implemented(void)
+{
+#ifdef ARM32
+	return false;
+#else
+	return ((read_id_aa64pfr1_el1() & ID_AA64PFR1_EL1_BT_MASK) ==
+		FEAT_BTI_IMPLEMENTED);
+#endif
+}
+
+static inline unsigned int feat_mte_implemented(void)
+{
+#ifdef ARM32
+	return 0;
+#else
+	return (read_id_aa64pfr1_el1() >> ID_AA64PFR1_EL1_MTE_SHIFT) &
+	       ID_AA64PFR1_EL1_MTE_MASK;
+#endif
+}
+
+static inline bool feat_crc32_implemented(void)
+{
+#ifdef ARM32
+	return false;
+#else
+	return ((read_id_aa64isar0_el1() >> ID_AA64ISAR0_EL1_CRC32_SHIFT) &
+		ID_AA64ISAR0_EL1_CRC32_MASK) == FEAT_CRC32_IMPLEMENTED;
+#endif
+}
+
+static inline bool feat_pauth_is_implemented(void)
+{
+#ifdef ARM32
+	return false;
+#else
+	uint64_t mask =
+		SHIFT_U64(ID_AA64ISAR1_GPI_MASK, ID_AA64ISAR1_GPI_SHIFT) |
+		SHIFT_U64(ID_AA64ISAR1_GPA_MASK, ID_AA64ISAR1_GPA_SHIFT) |
+		SHIFT_U64(ID_AA64ISAR1_API_MASK, ID_AA64ISAR1_API_SHIFT) |
+		SHIFT_U64(ID_AA64ISAR1_APA_MASK, ID_AA64ISAR1_APA_SHIFT);
+
+	/* If any of the fields is not zero, PAuth is implemented by arch */
+	return (read_id_aa64isar1_el1() & mask) != 0U;
+#endif
+}
+
 #endif
 
 #endif /*ARM_H*/

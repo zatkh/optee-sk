@@ -124,3 +124,42 @@
 	adrp	\reg, \sym
 	add	\reg, \reg, :lo12:\sym
 	.endm
+
+	.macro panic_at_smc_return
+#if defined(CFG_TEE_CORE_DEBUG)
+		bl	__panic_at_smc_return
+#else
+		b	.
+#endif
+	.endm
+
+	.macro read_apiakeylo reg
+	mrs	\reg, S3_0_c2_c1_0
+	.endm
+
+	.macro read_apiakeyhi reg
+	mrs	\reg, S3_0_c2_c1_1
+	.endm
+
+	.macro write_apiakeylo reg
+	msr	S3_0_c2_c1_0, \reg
+	.endm
+
+	.macro write_apiakeyhi reg
+	msr	S3_0_c2_c1_1, \reg
+	.endm
+
+	.macro write_pan reg
+	/* msr pan, \reg */
+	msr	S3_0_c4_c2_3, \reg
+	.endm
+
+	.macro write_pan_enable
+	/* msr pan, #1 */
+	msr	S0_0_c4_c1_4, xzr
+	.endm
+
+	.macro write_pan_disable
+	/* msr pan, #0 */
+	msr	S0_0_c4_c0_4, xzr
+	.endm

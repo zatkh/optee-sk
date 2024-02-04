@@ -12,6 +12,11 @@ include mk/$(COMPILER_$(sm)).mk
 # Config flags from mk/config.mk
 #
 
+ta-stackp-cflags-$(CFG_TA_STACK_PROTECTOR) := -fstack-protector
+ta-stackp-cflags-$(CFG_TA_STACK_PROTECTOR_STRONG) := -fstack-protector-strong
+ta-stackp-cflags-$(CFG_TA_STACK_PROTECTOR_ALL) := -fstack-protector-all
+$(sm)-platform-cflags += $(ta-stackp-cflags-y)
+
 ifeq ($(CFG_TA_MBEDTLS_SELF_TEST),y)
 $(sm)-platform-cppflags += -DMBEDTLS_SELF_TEST
 endif
@@ -97,7 +102,7 @@ ta-mk-file-export-vars-$(sm) += CFG_TA_MBEDTLS
 
 libname = utee
 libdir = lib/libutee
-libuuid = 527f1a47-b92c-4a74-95bd-72f19f4a6f74
+libuuid = 4b3d937e-d57e-418b-8673-1c04f2420226
 libl = mbedtls utils
 include mk/lib.mk
 
@@ -146,7 +151,8 @@ $(foreach f, $(libfiles), \
 
 # Copy .mk files
 ta-mkfiles = mk/compile.mk mk/subdir.mk mk/gcc.mk mk/clang.mk mk/cleandirs.mk \
-	ta/mk/link.mk ta/mk/link_shlib.mk \
+	mk/cc-option.mk \
+	ta/link.mk ta/link_shlib.mk \
 	ta/mk/ta_dev_kit.mk
 
 $(foreach f, $(ta-mkfiles), \
@@ -168,7 +174,7 @@ $(foreach f, $(incfiles-extra-host), \
 	$(eval $(call copy-file, $(f), $(out-dir)/export-$(sm)/host_include)))
 
 # Copy the src files
-ta-srcfiles = ta/user_ta_header.c ta/ta.ld.S
+ta-srcfiles = ta/user_ta_header.c ta/arch/$(ARCH)/ta.ld.S
 ifeq ($(ta-target),ta_arm32)
 ta-srcfiles += ta/arch/$(ARCH)/ta_entry_a32.S
 endif
@@ -176,7 +182,13 @@ $(foreach f, $(ta-srcfiles), \
 	$(eval $(call copy-file, $(f), $(out-dir)/export-$(sm)/src)))
 
 # Copy keys
-ta-keys = keys/default_ta.pem
+ta-keys := $(TA_SIGN_KEY)
+# default_ta.pem is a symlink to default.pem, for backwards compatibility.
+# If default_ta.pem is used, copy both files.
+ifeq ($(TA_SIGN_KEY),keys/default_ta.pem)
+ta-keys += keys/default.pem
+endif
+
 $(foreach f, $(ta-keys), \
 	$(eval $(call copy-file, $(f), $(out-dir)/export-$(sm)/keys)))
 

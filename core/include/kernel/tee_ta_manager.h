@@ -183,4 +183,18 @@ static inline void tee_ta_ftrace_update_times_suspend(void) {}
 static inline void tee_ta_ftrace_update_times_resume(void) {}
 #endif
 
+bool is_ta_ctx(struct ts_ctx *ctx);
+
+struct tee_ta_session *to_ta_session(struct ts_session *sess);
+
+static inline struct tee_ta_ctx *to_ta_ctx(struct ts_ctx *ctx)
+{
+	assert(is_ta_ctx(ctx));
+	return container_of(ctx, struct tee_ta_ctx, ts_ctx);
+}
+
+#if defined(CFG_TA_STATS)
+TEE_Result tee_ta_instance_stats(void *buff, size_t *buff_size);
+#endif
+
 #endif

@@ -140,17 +140,3 @@ CFG_WITH_STACK_CANARIES ?= y
 # NXP CAAM support is not enabled by default and can be enabled
 # on the command line
 CFG_NXP_CAAM ?= n
-
-ifeq ($(CFG_NXP_CAAM),y)
-# If NXP CAAM Driver is supported, the Crypto Driver interfacing
-# it with generic crypto API can be enabled.
-CFG_CRYPTO_DRIVER ?= y
-CFG_CAAM_64BIT ?= y
-CFG_CRYPTO_DRIVER_DEBUG ?= n
-else
-$(call force,CFG_CRYPTO_DRIVER,n)
-$(call force,CFG_WITH_SOFTWARE_PRNG,y)
-endif
-
-# Cryptographic configuration
-include core/arch/arm/plat-ls/crypto_conf.mk

@@ -10,8 +10,10 @@
 #include <kernel/misc.h>
 #include <kernel/msg_param.h>
 #include <kernel/pseudo_ta.h>
-#include <kernel/user_ta.h>
-#include <kernel/user_ta_store.h>
+#include <kernel/tpm.h>
+#include <kernel/ts_store.h>
+#include <kernel/user_access.h>
+#include <kernel/user_mode_ctx.h>
 #include <ldelf.h>
 #include <mm/file.h>
 #include <mm/fobj.h>
@@ -44,8 +46,10 @@ static TEE_Result system_rng_reseed(struct tee_ta_session *s __unused,
 				uint32_t param_types,
 				TEE_Param params[TEE_NUM_PARAMS])
 {
-	size_t entropy_sz;
-	uint8_t *entropy_input;
+	size_t entropy_sz = 0;
+	uint8_t *entropy_input = NULL;
+	void *seed_bbuf = NULL;
+	TEE_Result res = TEE_SUCCESS;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
 					  TEE_PARAM_TYPE_NONE,
 					  TEE_PARAM_TYPE_NONE,
@@ -60,10 +64,15 @@ static TEE_Result system_rng_reseed(struct tee_ta_session *s __unused,
 	if (!entropy_sz)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	entropy_sz = MIN(entropy_sz, MAX_ENTROPY_IN);
+	res = bb_memdup_user(entropy_input, entropy_sz, &seed_bbuf);
+	if (res)
+		return res;
 
 	crypto_rng_add_event(CRYPTO_RNG_SRC_NONSECURE, &system_pnum,
-			     entropy_input, entropy_sz);
+			     seed_bbuf, entropy_sz);
+
+	bb_free(seed_bbuf, entropy_sz);
+
 	return TEE_SUCCESS;
 }
 
@@ -75,6 +84,7 @@ static TEE_Result system_derive_ta_unique_key(struct tee_ta_session *s,
 	TEE_Result res = TEE_ERROR_GENERIC;
 	uint8_t *data = NULL;
 	uint32_t access_flags = 0;
+	void *subkey_bbuf = NULL;
 	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
 					  TEE_PARAM_TYPE_MEMREF_OUTPUT,
 					  TEE_PARAM_TYPE_NONE,
@@ -118,14 +128,28 @@ static TEE_Result system_derive_ta_unique_key(struct tee_ta_session *s,
 	memcpy(data, &s->ctx->uuid, sizeof(TEE_UUID));
 
 	/* Append the user provided data */
-	memcpy(data + sizeof(TEE_UUID), params[0].memref.buffer,
-	       params[0].memref.size);
+	res = copy_from_user(data + sizeof(TEE_UUID), params[0].memref.buffer,
+			     params[0].memref.size);
+	if (res)
+		goto out;
+
+	subkey_bbuf = bb_alloc(params[1].memref.size);
+	if (!subkey_bbuf) {
+		res = TEE_ERROR_OUT_OF_MEMORY;
+		goto out;
+	}
 
 	res = huk_subkey_derive(HUK_SUBKEY_UNIQUE_TA, data, data_len,
-				params[1].memref.buffer,
-				params[1].memref.size);
-	free(data);
+				subkey_bbuf, params[1].memref.size);
+	if (res)
+		goto out;
 
+	res = copy_to_user(params[1].memref.buffer, subkey_bbuf,
+			   params[1].memref.size);
+
+out:
+	bb_free(subkey_bbuf, params[1].memref.size);
+	free_wipe(data);
 	return res;
 }
 
@@ -734,25 +758,25 @@ static TEE_Result system_dlopen(struct tee_ta_session *cs, uint32_t param_types,
 					  TEE_PARAM_TYPE_NONE,
 					  TEE_PARAM_TYPE_NONE);
 	TEE_Result res = TEE_ERROR_GENERIC;
-	struct tee_ta_session *s = NULL;
-	struct user_ta_ctx *utc = NULL;
-	TEE_UUID *uuid = NULL;
+	struct ts_session *s = NULL;
+	TEE_UUID uuid = { };
 	uint32_t flags = 0;
 
 	if (exp_pt != param_types)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	uuid = params[0].memref.buffer;
-	if (!uuid || params[0].memref.size != sizeof(*uuid))
+	if (!params[0].memref.buffer || params[0].memref.size != sizeof(uuid))
 		return TEE_ERROR_BAD_PARAMETERS;
+
+	res = copy_from_user(&uuid, params[0].memref.buffer, sizeof(uuid));
+	if (res)
+		return res;
 
 	flags = params[1].value.a;
 
-	utc = to_user_ta_ctx(cs->ctx);
-
-	s = tee_ta_pop_current_session();
-	res = call_ldelf_dlopen(utc, uuid, flags);
-	tee_ta_push_current_session(s);
+	s = ts_pop_current_session();
+	res = ldelf_dlopen(uctx, &uuid, flags);
+	ts_push_current_session(s);
 
 	return res;
 }
@@ -765,30 +789,32 @@ static TEE_Result system_dlsym(struct tee_ta_session *cs, uint32_t param_types,
 					  TEE_PARAM_TYPE_VALUE_OUTPUT,
 					  TEE_PARAM_TYPE_NONE);
 	TEE_Result res = TEE_ERROR_GENERIC;
-	struct tee_ta_session *s = NULL;
-	struct user_ta_ctx *utc = NULL;
-	const char *sym = NULL;
-	TEE_UUID *uuid = NULL;
-	size_t maxlen = 0;
+	struct ts_session *s = NULL;
+	char *sym = NULL;
+	TEE_UUID uuid = { };
+	size_t symlen = 0;
 	vaddr_t va = 0;
 
 	if (exp_pt != param_types)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	uuid = params[0].memref.buffer;
-	if (uuid && params[0].memref.size != sizeof(*uuid))
+	if (!params[0].memref.buffer || params[0].memref.size != sizeof(uuid))
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	sym = params[1].memref.buffer;
-	if (!sym)
+	res = copy_from_user(&uuid, params[0].memref.buffer, sizeof(uuid));
+	if (res)
+		return res;
+
+	if (!params[1].memref.buffer)
 		return TEE_ERROR_BAD_PARAMETERS;
-	maxlen = params[1].memref.size;
+	res = bb_strndup_user(params[1].memref.buffer, params[1].memref.size,
+			      &sym, &symlen);
+	if (res)
+		return res;
 
-	utc = to_user_ta_ctx(cs->ctx);
-
-	s = tee_ta_pop_current_session();
-	res = call_ldelf_dlsym(utc, uuid, sym, maxlen, &va);
-	tee_ta_push_current_session(s);
+	s = ts_pop_current_session();
+	res = ldelf_dlsym(uctx, &uuid, sym, symlen, &va);
+	ts_push_current_session(s);
 
 	if (!res)
 		reg_pair_from_64(va, &params[2].value.a, &params[2].value.b);
@@ -812,6 +838,38 @@ static TEE_Result system_get_tpm_event_log(uint32_t param_types,
 	size = params[0].memref.size;
 	res = tpm_get_event_log(params[0].memref.buffer, &size);
 	params[0].memref.size = size;
+
+	return res;
+}
+
+static TEE_Result system_supp_plugin_invoke(uint32_t param_types,
+					    TEE_Param params[TEE_NUM_PARAMS])
+{
+	uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+					  TEE_PARAM_TYPE_VALUE_INPUT,
+					  TEE_PARAM_TYPE_MEMREF_INOUT,
+					  TEE_PARAM_TYPE_VALUE_OUTPUT);
+	TEE_Result res = TEE_ERROR_GENERIC;
+	size_t outlen = 0;
+	TEE_UUID uuid = { };
+
+	if (exp_pt != param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	if (!params[0].memref.buffer || params[0].memref.size != sizeof(uuid))
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	res = copy_from_user(&uuid, params[0].memref.buffer, sizeof(uuid));
+	if (res)
+		return res;
+
+	res = tee_invoke_supp_plugin_rpc(&uuid,
+					 params[1].value.a, /* cmd */
+					 params[1].value.b, /* sub_cmd */
+					 params[2].memref.buffer, /* data */
+					 params[2].memref.size, /* in len */
+					 &outlen);
+	params[3].value.a = (uint32_t)outlen;
 
 	return res;
 }

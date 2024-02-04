@@ -24,25 +24,26 @@
 
 vaddr_t tee_svc_uref_base;
 
-void syscall_log(const void *buf __maybe_unused, size_t len __maybe_unused)
+void syscall_log(const void *buf, size_t len)
 {
-#ifdef CFG_TEE_CORE_TA_TRACE
-	char *kbuf;
+	if (IS_ENABLED(CFG_TEE_CORE_TA_TRACE)) {
+		char *kbuf = NULL;
+		size_t sz = 0;
 
-	if (len == 0)
-		return;
+		if (!len || ADD_OVERFLOW(len, 1, &sz))
+			return;
 
-	kbuf = malloc(len + 1);
-	if (kbuf == NULL)
-		return;
+		kbuf = malloc(sz);
+		if (!kbuf)
+			return;
 
-	if (tee_svc_copy_from_user(kbuf, buf, len) == TEE_SUCCESS) {
-		kbuf[len] = '\0';
-		trace_ext_puts(kbuf);
+		if (copy_from_user(kbuf, buf, len) == TEE_SUCCESS) {
+			kbuf[len] = '\0';
+			trace_ext_puts(kbuf);
+		}
+
+		free_wipe(kbuf);
 	}
-
-	free_wipe(kbuf);
-#endif
 }
 
 TEE_Result syscall_not_supported(void)
@@ -77,14 +78,13 @@ static const bool crypto_ecc_en;
 
 /*
  * Trusted storage anti rollback protection level
- * 0 (or missing): No antirollback protection (default)
  * 100: Antirollback enforced at REE level
  * 1000: Antirollback TEE-controlled hardware
  */
 #ifdef CFG_RPMB_FS
 static const uint32_t ts_antiroll_prot_lvl = 1000;
 #else
-static const uint32_t ts_antiroll_prot_lvl;
+static const uint32_t ts_antiroll_prot_lvl = 100;
 #endif
 
 /* Trusted OS implementation version */
@@ -173,6 +173,32 @@ static TEE_Result get_prop_client_id(struct tee_ta_session *sess __unused,
 	return tee_svc_copy_to_user(buf, &sess->clnt_id, sizeof(TEE_Identity));
 }
 
+static TEE_Result get_prop_client_endian(struct ts_session *sess __unused,
+					 void *buf, size_t *blen)
+{
+	const uint32_t endian = 0; /* assume little-endian */
+
+	if (*blen < sizeof(endian)) {
+		*blen = sizeof(endian);
+		return TEE_ERROR_SHORT_BUFFER;
+	}
+	*blen = sizeof(endian);
+	return copy_to_user(buf, &endian, sizeof(endian));
+}
+
+static TEE_Result get_prop_ta_app_id(struct ts_session *sess,
+					 void *buf, size_t *blen)
+{
+	const uint32_t endian = 0; /* assume little-endian */
+
+	if (*blen < sizeof(endian)) {
+		*blen = sizeof(endian);
+		return TEE_ERROR_SHORT_BUFFER;
+	}
+	*blen = sizeof(endian);
+	return copy_to_user(buf, &endian, sizeof(endian));
+}
+
 static TEE_Result get_prop_ta_app_id(struct tee_ta_session *sess,
 				     void *buf, size_t *blen)
 {
@@ -190,6 +216,11 @@ const struct tee_props tee_propset_client[] = {
 		.name = "gpd.client.identity",
 		.prop_type = USER_TA_PROP_TYPE_IDENTITY,
 		.get_prop_func = get_prop_client_id
+	},
+	{
+		.name = "gpd.client.endian",
+		.prop_type = USER_TA_PROP_TYPE_U32,
+		.get_prop_func = get_prop_client_endian
 	},
 };
 
@@ -498,13 +529,25 @@ static TEE_Result utee_param_to_param(struct user_ta_ctx *utc,
 				      struct tee_ta_param *p,
 				      struct utee_params *up)
 {
+	TEE_Result res = TEE_SUCCESS;
 	size_t n = 0;
-	uint32_t types = up->types;
+	uint64_t types = 0;
+	struct utee_params *up_bbuf = NULL;
+
+	up_bbuf = bb_alloc(sizeof(struct utee_params));
+	if (!up_bbuf)
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+	res = copy_from_user(up_bbuf, up, sizeof(struct utee_params));
+	if (res)
+		goto out;
+
+	types = up_bbuf->types;
 
 	p->types = types;
 	for (n = 0; n < TEE_NUM_PARAMS; n++) {
-		uintptr_t a = up->vals[n * 2];
-		size_t b = up->vals[n * 2 + 1];
+		uintptr_t a = up_bbuf->vals[n * 2];
+		size_t b = up_bbuf->vals[n * 2 + 1];
 		uint32_t flags = TEE_MEMORY_ACCESS_READ |
 				 TEE_MEMORY_ACCESS_ANY_OWNER;
 
@@ -514,12 +557,24 @@ static TEE_Result utee_param_to_param(struct user_ta_ctx *utc,
 			flags |= TEE_MEMORY_ACCESS_WRITE;
 			/*FALLTHROUGH*/
 		case TEE_PARAM_TYPE_MEMREF_INPUT:
-			p->u[n].mem.mobj = &mobj_virt;
-			p->u[n].mem.offs = a;
+			p->u[n].mem.offs = memtag_strip_tag_vaddr((void *)a);
 			p->u[n].mem.size = b;
-			if (tee_mmu_check_access_rights(&utc->uctx, flags, a,
-							b))
-				return TEE_ERROR_ACCESS_DENIED;
+
+			if (!p->u[n].mem.offs) {
+				/* Allow NULL memrefs if of size 0 */
+				if (p->u[n].mem.size) {
+					res = TEE_ERROR_BAD_PARAMETERS;
+					goto out;
+				}
+				p->u[n].mem.mobj = NULL;
+				break;
+			}
+
+			p->u[n].mem.mobj = &mobj_virt;
+
+			res = vm_check_access_rights(&utc->uctx, flags, a, b);
+			if (res)
+				goto out;
 			break;
 		case TEE_PARAM_TYPE_VALUE_INPUT:
 		case TEE_PARAM_TYPE_VALUE_INOUT:
@@ -532,7 +587,9 @@ static TEE_Result utee_param_to_param(struct user_ta_ctx *utc,
 		}
 	}
 
-	return TEE_SUCCESS;
+out:
+	bb_free(up_bbuf, sizeof(struct utee_params));
+	return res;
 }
 
 static TEE_Result alloc_temp_sec_mem(size_t size, struct mobj **mobj,
@@ -704,10 +761,15 @@ static TEE_Result tee_svc_update_out_param(
 		size_t tmp_buf_size[TEE_NUM_PARAMS],
 		struct utee_params *usr_param)
 {
-	size_t n;
+	size_t n = 0;
 	uint64_t *vals = usr_param->vals;
+	uint64_t sz = 0;
+	uint64_t in_sz = 0;
 
 	for (n = 0; n < TEE_NUM_PARAMS; n++) {
+		TEE_Result res = TEE_SUCCESS;
+		uint64_t val_buf[2] = { };
+
 		switch (TEE_PARAM_TYPE_GET(param->types, n)) {
 		case TEE_PARAM_TYPE_MEMREF_OUTPUT:
 		case TEE_PARAM_TYPE_MEMREF_INOUT:
@@ -717,11 +779,19 @@ static TEE_Result tee_svc_update_out_param(
 			 * a temporary buffer is used. Otherwise only the
 			 * size needs to be updated.
 			 */
-			if (tmp_buf_va[n] &&
-			    param->u[n].mem.size <= vals[n * 2 + 1]) {
+			sz = param->u[n].mem.size;
+
+			res = GET_USER_SCALAR(in_sz, &vals[n * 2 + 1]);
+			if (res)
+				return res;
+
+			if (tmp_buf_va[n] && sz <= in_sz) {
 				void *src = tmp_buf_va[n];
-				void *dst = (void *)(uintptr_t)vals[n * 2];
-				TEE_Result res;
+				uint64_t dst = 0;
+
+				res = GET_USER_SCALAR(dst, &vals[n * 2]);
+				if (res)
+					return res;
 
 				/*
 				 * TA is allowed to return a size larger than
@@ -729,20 +799,29 @@ static TEE_Result tee_svc_update_out_param(
 				 * data should be synchronized as per TEE Client
 				 * API spec.
 				 */
-				if (param->u[n].mem.size <= tmp_buf_size[n]) {
-					res = tee_svc_copy_to_user(dst, src,
-							param->u[n].mem.size);
+				if (sz <= tmp_buf_size[n]) {
+					res = copy_to_user((void *)(vaddr_t)dst,
+							   src, sz);
 					if (res != TEE_SUCCESS)
 						return res;
 				}
 			}
-			usr_param->vals[n * 2 + 1] = param->u[n].mem.size;
+			res = PUT_USER_SCALAR(sz, &usr_param->vals[n * 2 + 1]);
+			if (res)
+				return res;
+
 			break;
 
 		case TEE_PARAM_TYPE_VALUE_OUTPUT:
 		case TEE_PARAM_TYPE_VALUE_INOUT:
-			vals[n * 2] = param->u[n].val.a;
-			vals[n * 2 + 1] = param->u[n].val.b;
+			val_buf[0] = param->u[n].val.a;
+			val_buf[1] = param->u[n].val.b;
+
+			res = copy_to_user(&vals[n * 2], val_buf,
+					   2 * sizeof(uint64_t));
+			if (res)
+				return res;
+
 			break;
 
 		default:

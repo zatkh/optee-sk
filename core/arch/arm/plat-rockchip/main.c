@@ -14,10 +14,6 @@
 #include <mm/core_memprot.h>
 #include <platform_config.h>
 #include <stdint.h>
-#include <tee/entry_std.h>
-#include <tee/entry_fast.h>
-
-static struct gic_data gic_data;
 
 #if defined(CFG_EARLY_CONSOLE)
 static struct serial8250_uart_data early_console_data;
@@ -45,34 +41,14 @@ static const struct thread_handlers handlers = {
 #endif
 };
 
-void main_init_gic(void)
+void primary_init_intc(void)
 {
-	vaddr_t gicc_base = 0;
-	vaddr_t gicd_base = 0;
-
-#if !defined(CFG_ARM_GICV3)
-	gicc_base = (vaddr_t)phys_to_virt(GICC_BASE, MEM_AREA_IO_SEC);
-	if (!gicc_base)
-		panic();
-#endif
-
-	gicd_base = (vaddr_t)phys_to_virt(GICD_BASE, MEM_AREA_IO_SEC);
-	if (!gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GICC_BASE, GICD_BASE);
 }
 
-void main_secondary_init_gic(void)
+void main_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
-}
-
-const struct thread_handlers *generic_boot_get_handlers(void)
-{
-	return &handlers;
+	gic_cpu_init();
 }
 
 void console_init(void)

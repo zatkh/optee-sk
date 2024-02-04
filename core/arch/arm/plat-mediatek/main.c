@@ -28,10 +28,19 @@ static const struct thread_handlers handlers = {
 
 static struct serial8250_uart_data console_data;
 
-const struct thread_handlers *generic_boot_get_handlers(void)
+register_ddr(CFG_DRAM_BASE, CFG_DRAM_SIZE);
+
+#ifdef CFG_GIC
+register_phys_mem_pgdir(MEM_AREA_IO_SEC, GIC_BASE + GICD_OFFSET,
+			CORE_MMU_PGDIR_SIZE);
+register_phys_mem_pgdir(MEM_AREA_IO_SEC, GIC_BASE + GICC_OFFSET,
+			CORE_MMU_PGDIR_SIZE);
+
+void primary_init_intc(void)
 {
-	return &handlers;
+	gic_init(GIC_BASE + GICC_OFFSET, GIC_BASE + GICD_OFFSET);
 }
+#endif
 
 void console_init(void)
 {

@@ -8,7 +8,6 @@
 #include <drivers/gic.h>
 #include <drivers/serial8250_uart.h>
 #include <kernel/generic_boot.h>
-#include <kernel/interrupt.h>
 #include <kernel/panic.h>
 #include <kernel/pm_stubs.h>
 #include <mm/core_memprot.h>
@@ -27,7 +26,6 @@ static const struct thread_handlers handlers = {
 	.system_reset = pm_do_nothing,
 };
 
-static struct gic_data gic_data;
 struct serial8250_uart_data console_data;
 
 #ifdef BCM_DEVICE0_BASE
@@ -91,21 +89,7 @@ void console_init(void)
 		      CFG_BCM_ELOG_AP_UART_LOG_SIZE);
 }
 
-void itr_core_handler(void)
+void primary_init_intc(void)
 {
-	gic_it_handle(&gic_data);
-}
-
-void main_init_gic(void)
-{
-	vaddr_t gicd_base;
-
-	gicd_base = core_mmu_get_va(GICD_BASE, MEM_AREA_IO_SEC);
-
-	if (!gicd_base)
-		panic();
-
-	gic_init_base_addr(&gic_data, 0, gicd_base);
-	itr_init(&gic_data.chip);
-
+	gic_init(0, GICD_BASE);
 }

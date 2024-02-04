@@ -10,6 +10,8 @@
 #include <caam_hal_ctrl.h>
 #include <caam_hash.h>
 #include <caam_jr.h>
+#include <caam_blob.h>
+#include <caam_mp.h>
 #include <caam_pwr.h>
 #include <caam_rng.h>
 #include <caam_utils_mem.h>
@@ -51,8 +53,78 @@ static TEE_Result crypto_driver_init(void)
 	}
 
 	/* Initialize the Hash Module */
-	retstatus = caam_hash_init(jrcfg.base);
+	retstatus = caam_hash_init(&jrcfg);
 	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the MATH Module */
+	retstatus = caam_math_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the RSA Module */
+	retstatus = caam_rsa_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the Cipher Module */
+	retstatus = caam_cipher_init(jrcfg.base);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the HMAC Module */
+	retstatus = caam_hmac_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the BLOB Module */
+	retstatus = caam_blob_mkvb_init(jrcfg.base);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the CMAC Module */
+	retstatus = caam_cmac_init(jrcfg.base);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the ECC Module */
+	retstatus = caam_ecc_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the DH Module */
+	retstatus = caam_dh_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the DSA Module */
+	retstatus = caam_dsa_init(&jrcfg);
+	if (retstatus != CAAM_NO_ERROR) {
+		retresult = TEE_ERROR_GENERIC;
+		goto exit_init;
+	}
+
+	/* Initialize the Manufacturing Protection Module */
+	retstatus = caam_mp_init(jrcfg.base);
+	if (retstatus != CAAM_NO_ERROR && retstatus != CAAM_NOT_SUPPORTED) {
 		retresult = TEE_ERROR_GENERIC;
 		goto exit_init;
 	}

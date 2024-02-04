@@ -137,32 +137,22 @@ register_phys_mem(MEM_AREA_NSEC_SHM, TEE_SHMEM_START, TEE_SHMEM_SIZE);
 static bitstr_t bit_decl(g_asid, MMU_NUM_ASID_PAIRS) __nex_bss;
 static unsigned int g_asid_spinlock __nex_bss = SPINLOCK_UNLOCK;
 
-static unsigned int mmu_spinlock;
-
-static uint32_t mmu_lock(void)
+void tlbi_va_range(vaddr_t va, size_t len, size_t granule)
 {
 	return cpu_spin_lock_xsave(&mmu_spinlock);
 }
 
-static void mmu_unlock(uint32_t exceptions)
-{
-	cpu_spin_unlock_xrestore(&mmu_spinlock, exceptions);
+	dsb_ishst();
+	while (len) {
+		tlbi_va_allasid_nosync(va);
+		len -= granule;
+		va += granule;
+	}
+	dsb_ish();
+	isb();
 }
 
-static struct tee_mmap_region *get_memory_map(void)
-{
-#ifdef CFG_VIRTUALIZATION
-	struct tee_mmap_region *map = virt_get_memory_map();
-
-	if (map)
-		return map;
-#endif
-	return static_memory_map;
-
-}
-
-static bool _pbuf_intersects(struct memaccess_area *a, size_t alen,
-			     paddr_t pa, size_t size)
+void tlbi_va_range_asid(vaddr_t va, size_t len, size_t granule, uint32_t asid)
 {
 	size_t n;
 
@@ -1406,11 +1396,9 @@ void tlbi_mva_range(vaddr_t va, size_t size, size_t granule)
 	assert(granule == CORE_MMU_PGDIR_SIZE || granule == SMALL_PAGE_SIZE);
 
 	dsb_ishst();
-	while (sz) {
-		tlbi_mva_allasid_nosync(va);
-		if (sz < granule)
-			break;
-		sz -= granule;
+	while (len) {
+		tlbi_va_asid_nosync(va, asid);
+		len -= granule;
 		va += granule;
 	}
 	dsb_ish();

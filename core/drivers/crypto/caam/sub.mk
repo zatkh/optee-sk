@@ -8,5 +8,10 @@ srcs-y += caam_ctrl.c
 srcs-y += caam_jr.c
 srcs-y += caam_rng.c
 srcs-y += caam_desc.c
+//Out of Line 12 and 13 (choose any one as per the required architecture)
 subdirs-$(CFG_NXP_CAAM_HASH_DRV) += hash
-
+subdirs-$(call cfg-one-enabled, CFG_NXP_CAAM_HASH_DRV CFG_NXP_CAAM_HMAC_DRV) += hash
+subdirs-$(call cfg-one-enabled, CFG_NXP_CAAM_CIPHER_DRV CFG_NXP_CAAM_CMAC_DRV) += cipher
+subdirs-y += acipher
+subdirs-$(CFG_NXP_CAAM_BLOB_DRV) += blob
+subdirs-$(CFG_NXP_CAAM_MP_DRV) += mp

@@ -51,25 +51,6 @@
 #include <kernel/tee_common_otp.h>
 #include <mm/core_mmu.h>
 
-static const struct thread_handlers handlers = {
-#if defined(CFG_WITH_ARM_TRUSTED_FW)
-	.cpu_on = cpu_on_handler,
-	.cpu_off = pm_do_nothing,
-	.cpu_suspend = pm_do_nothing,
-	.cpu_resume = pm_do_nothing,
-	.system_off = pm_do_nothing,
-	.system_reset = pm_do_nothing,
-#else
-	.cpu_on = pm_panic,
-	.cpu_off = pm_panic,
-	.cpu_suspend = pm_panic,
-	.cpu_resume = pm_panic,
-	.system_off = pm_panic,
-	.system_reset = pm_panic,
-#endif
-};
-
-static struct gic_data gic_data;
 #ifdef CFG_PL011
 static struct pl011_data console_data;
 #else
@@ -136,7 +117,80 @@ void console_init(void)
 	register_serial_console(&console_data.chip);
 }
 
-void main_init_gic(void)
+#if defined(PLATFORM_FLAVOR_lx2160aqds) || defined(PLATFORM_FLAVOR_lx2160ardb)
+static TEE_Result get_gic_base_addr_from_dt(paddr_t *gic_addr)
+{
+	paddr_t paddr = 0;
+	size_t size = 0;
+
+	void *fdt = get_embedded_dt();
+	int gic_offset = 0;
+
+	gic_offset = fdt_path_offset(fdt, "/soc/interrupt-controller@6000000");
+
+	if (gic_offset < 0)
+		gic_offset = fdt_path_offset(fdt,
+					     "/interrupt-controller@6000000");
+
+	if (gic_offset > 0) {
+		paddr = fdt_reg_base_address(fdt, gic_offset);
+		if (paddr == DT_INFO_INVALID_REG) {
+			EMSG("GIC: Unable to get base addr from DT");
+			return TEE_ERROR_ITEM_NOT_FOUND;
+		}
+
+		size = fdt_reg_size(fdt, gic_offset);
+		if (size == DT_INFO_INVALID_REG_SIZE) {
+			EMSG("GIC: Unable to get size of base addr from DT");
+			return TEE_ERROR_ITEM_NOT_FOUND;
+		}
+	} else {
+		EMSG("Unable to get gic offset node");
+		return TEE_ERROR_ITEM_NOT_FOUND;
+	}
+
+	/* make entry in page table */
+	if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, paddr, size)) {
+		EMSG("GIC controller base MMU PA mapping failure");
+		return TEE_ERROR_GENERIC;
+	}
+
+	*gic_addr = paddr;
+	return TEE_SUCCESS;
+}
+#endif
+
+#define SVR_MINOR_MASK 0xF
+
+static void get_gic_offset(uint32_t *offsetc, uint32_t *offsetd)
+{
+#ifdef PLATFORM_FLAVOR_ls1043ardb
+	vaddr_t addr = 0;
+	uint32_t rev = 0;
+
+	addr = (vaddr_t)phys_to_virt(DCFG_BASE + DCFG_SVR_OFFSET,
+				     MEM_AREA_IO_NSEC, 1);
+	if (!addr) {
+		EMSG("Failed to get virtual address for SVR register");
+		panic();
+	}
+
+	rev = get_be32((void *)addr);
+
+	if ((rev & SVR_MINOR_MASK) == 1) {
+		*offsetc = GICC_OFFSET_REV1_1;
+		*offsetd = GICD_OFFSET_REV1_1;
+	} else {
+		*offsetc = GICC_OFFSET_REV1;
+		*offsetd = GICD_OFFSET_REV1;
+	}
+#else
+	*offsetc = GICC_OFFSET;
+	*offsetd = GICD_OFFSET;
+#endif
+}
+
+void primary_init_intc(void)
 {
 	vaddr_t gicc_base;
 	vaddr_t gicd_base;
@@ -146,17 +200,19 @@ void main_init_gic(void)
 	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
 					  MEM_AREA_IO_SEC);
 
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+#if defined(PLATFORM_FLAVOR_lx2160aqds) || defined(PLATFORM_FLAVOR_lx2160ardb)
+	if (get_gic_base_addr_from_dt(&gic_base))
+		EMSG("Failed to get GIC base addr from DT");
+#else
+	gic_base = GIC_BASE;
+#endif
+	get_gic_offset(&gicc_offset, &gicd_offset);
+	gic_init(gic_base + gicc_offset, gic_base + gicd_offset);
 }
 
-void main_secondary_init_gic(void)
+void main_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
+	gic_cpu_init();
 }
 
 #ifdef CFG_HW_UNQ_KEY_REQUEST
